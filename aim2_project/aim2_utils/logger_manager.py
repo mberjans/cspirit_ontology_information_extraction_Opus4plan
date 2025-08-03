@@ -28,6 +28,8 @@ import threading
 import atexit
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .rotating_file_handler import create_rotating_file_handler
 from .logger_config import LoggerConfig, LoggerConfigError
 from .colored_console_handler import ColoredConsoleHandler
 
@@ -515,7 +517,7 @@ class LoggerManager:
             return logging.StreamHandler()
 
     def _create_file_handler(self) -> Optional[logging.Handler]:
-        """Create a file handler (rotating if configured)."""
+        """Create an enhanced rotating file handler with support for size and time-based rotation."""
         file_path = self.config.get_file_path()
         if not file_path:
             return None
@@ -525,22 +527,31 @@ class LoggerManager:
             path = Path(file_path)
             path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Create rotating file handler
+            # Get configuration for enhanced rotating file handler
             max_bytes = self.config.get_max_file_size_bytes()
             backup_count = self.config.get_backup_count()
+            rotation_type = self.config.get_rotation_type()
+            time_interval = self.config.get_time_interval()
+            time_when = self.config.get_time_when()
 
-            handler = logging.handlers.RotatingFileHandler(
+            # Create enhanced rotating file handler
+            handler = create_rotating_file_handler(
                 filename=file_path,
-                maxBytes=max_bytes,
-                backupCount=backup_count,
+                rotation_type=rotation_type,
+                max_bytes=max_bytes,
+                backup_count=backup_count,
+                time_interval=time_interval,
+                time_when=time_when,
                 encoding="utf-8",
+                level=self.config.get_level_int(),
             )
 
             return handler
 
         except Exception as e:
             raise LoggerManagerError(
-                f"Failed to create file handler for {file_path}: {str(e)}", e
+                f"Failed to create enhanced rotating file handler for {file_path}: {str(e)}",
+                e,
             )
 
     def _cleanup_handlers(self) -> None:

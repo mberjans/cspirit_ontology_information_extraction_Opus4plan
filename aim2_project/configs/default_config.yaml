@@ -38,6 +38,10 @@ logging:
   file_path: null
   max_file_size: "10MB"
   backup_count: 3
+  # Rotation configuration
+  rotation_type: "size"  # Options: "size", "time", "both"
+  time_interval: "daily"  # Options: "hourly", "daily", "weekly", "midnight"
+  time_when: "midnight"  # For daily: "midnight" or "HH:MM" (e.g., "02:30")
 
 # NLP model configuration
 nlp:

@@ -71,6 +71,9 @@ class LoggerConfig:
         "file_path": None,
         "max_file_size": "10MB",
         "backup_count": 3,
+        "rotation_type": "size",
+        "time_interval": "daily",
+        "time_when": "midnight",
         "enable_colors": True,
         "color_scheme": "default",
         "force_colors": False,
@@ -84,6 +87,12 @@ class LoggerConfig:
 
     # Valid color schemes
     VALID_COLOR_SCHEMES = ["default", "bright", "minimal"]
+
+    # Valid rotation types
+    VALID_ROTATION_TYPES = ["size", "time", "both"]
+
+    # Valid time intervals
+    VALID_TIME_INTERVALS = ["hourly", "daily", "weekly", "midnight"]
 
     # Size unit multipliers (case-insensitive)
     SIZE_UNITS = {
@@ -272,6 +281,43 @@ class LoggerConfig:
         if not isinstance(force_colors, bool):
             errors.append("force_colors must be a boolean")
 
+        # Validate rotation_type
+        rotation_type = config.get(
+            "rotation_type", self.DEFAULT_CONFIG["rotation_type"]
+        )
+        if not isinstance(rotation_type, str):
+            errors.append("rotation_type must be a string")
+        elif rotation_type not in self.VALID_ROTATION_TYPES:
+            errors.append(
+                f"Invalid rotation_type '{rotation_type}'. Must be one of: {', '.join(self.VALID_ROTATION_TYPES)}"
+            )
+
+        # Validate time_interval
+        time_interval = config.get(
+            "time_interval", self.DEFAULT_CONFIG["time_interval"]
+        )
+        if not isinstance(time_interval, str):
+            errors.append("time_interval must be a string")
+        elif time_interval not in self.VALID_TIME_INTERVALS:
+            errors.append(
+                f"Invalid time_interval '{time_interval}'. Must be one of: {', '.join(self.VALID_TIME_INTERVALS)}"
+            )
+
+        # Validate time_when
+        time_when = config.get("time_when", self.DEFAULT_CONFIG["time_when"])
+        if not isinstance(time_when, str):
+            errors.append("time_when must be a string")
+        elif time_interval in ["daily", "midnight"] and time_when != "midnight":
+            # Validate HH:MM format for daily rotation
+            try:
+                hour, minute = map(int, time_when.split(":"))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError()
+            except (ValueError, IndexError):
+                errors.append(
+                    f"Invalid time_when '{time_when}'. Must be 'midnight' or 'HH:MM' format (e.g., '02:30')"
+                )
+
         # Check for file handler requirements
         if "file" in handlers:
             if file_path is None:
@@ -398,6 +444,33 @@ class LoggerConfig:
         """
         return self.config["force_colors"]
 
+    def get_rotation_type(self) -> str:
+        """
+        Get the rotation type for file handlers.
+
+        Returns:
+            str: Rotation type ("size", "time", or "both")
+        """
+        return self.config["rotation_type"]
+
+    def get_time_interval(self) -> str:
+        """
+        Get the time interval for time-based rotation.
+
+        Returns:
+            str: Time interval ("hourly", "daily", "weekly", or "midnight")
+        """
+        return self.config["time_interval"]
+
+    def get_time_when(self) -> str:
+        """
+        Get when to rotate for daily rotation.
+
+        Returns:
+            str: Time specification ("midnight" or "HH:MM" format)
+        """
+        return self.config["time_when"]
+
     def update_config(self, updates: Dict[str, Any]) -> None:
         """
         Update the logging configuration with new values.
@@ -506,6 +579,68 @@ class LoggerConfig:
             raise LoggerConfigError("force_colors must be a boolean")
         self.config["force_colors"] = force_colors
 
+    def set_rotation_type(self, rotation_type: str) -> None:
+        """
+        Set the rotation type for file handlers.
+
+        Args:
+            rotation_type (str): Rotation type to set
+
+        Raises:
+            LoggerConfigError: If rotation_type is invalid
+        """
+        if not isinstance(rotation_type, str):
+            raise LoggerConfigError("rotation_type must be a string")
+        if rotation_type not in self.VALID_ROTATION_TYPES:
+            raise LoggerConfigError(
+                f"Invalid rotation_type '{rotation_type}'. Must be one of: {', '.join(self.VALID_ROTATION_TYPES)}"
+            )
+        self.config["rotation_type"] = rotation_type
+
+    def set_time_interval(self, time_interval: str) -> None:
+        """
+        Set the time interval for time-based rotation.
+
+        Args:
+            time_interval (str): Time interval to set
+
+        Raises:
+            LoggerConfigError: If time_interval is invalid
+        """
+        if not isinstance(time_interval, str):
+            raise LoggerConfigError("time_interval must be a string")
+        if time_interval not in self.VALID_TIME_INTERVALS:
+            raise LoggerConfigError(
+                f"Invalid time_interval '{time_interval}'. Must be one of: {', '.join(self.VALID_TIME_INTERVALS)}"
+            )
+        self.config["time_interval"] = time_interval
+
+    def set_time_when(self, time_when: str) -> None:
+        """
+        Set when to rotate for daily rotation.
+
+        Args:
+            time_when (str): Time specification to set
+
+        Raises:
+            LoggerConfigError: If time_when is invalid
+        """
+        if not isinstance(time_when, str):
+            raise LoggerConfigError("time_when must be a string")
+
+        # Validate format if not "midnight"
+        if time_when != "midnight":
+            try:
+                hour, minute = map(int, time_when.split(":"))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError()
+            except (ValueError, IndexError):
+                raise LoggerConfigError(
+                    f"Invalid time_when '{time_when}'. Must be 'midnight' or 'HH:MM' format (e.g., '02:30')"
+                )
+
+        self.config["time_when"] = time_when
+
     def add_handler(self, handler: str) -> None:
         """
         Add a handler to the configuration.
@@ -585,6 +720,9 @@ class LoggerConfig:
             "FILE_PATH": "file_path",
             "MAX_FILE_SIZE": "max_file_size",
             "BACKUP_COUNT": "backup_count",
+            "ROTATION_TYPE": "rotation_type",
+            "TIME_INTERVAL": "time_interval",
+            "TIME_WHEN": "time_when",
             "ENABLE_COLORS": "enable_colors",
             "COLOR_SCHEME": "color_scheme",
             "FORCE_COLORS": "force_colors",
