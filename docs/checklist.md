@@ -41,7 +41,7 @@
 - [x] **AIM2-004-02** Write unit tests for log formatters
 - [x] **AIM2-004-03** Create LoggerFactory class
 - [x] **AIM2-004-04** Implement console handler with colors
-- [ ] **AIM2-004-05** Implement rotating file handler
+- [x] **AIM2-004-05** Implement rotating file handler
 - [ ] **AIM2-004-06** Create JSON formatter for structured logs
 - [ ] **AIM2-004-07** Add context injection for request IDs
 - [ ] **AIM2-004-08** Implement log level configuration
