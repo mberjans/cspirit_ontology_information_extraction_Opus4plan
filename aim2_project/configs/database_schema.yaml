@@ -1,0 +1,47 @@
+# Database Configuration Schema
+# This schema validates database connection configurations
+# Version: 1.0.0
+
+database:
+  required:
+    - host
+    - port
+    - name
+    - username
+  types:
+    host: str
+    port: int
+    name: str
+    username: str
+    password: str
+    ssl_mode: str
+    pool_size: int
+    timeout: int
+    connection_params: dict
+  constraints:
+    port:
+      min: 1
+      max: 65535
+    pool_size:
+      min: 1
+      max: 100
+    timeout:
+      min: 1
+      max: 300
+    ssl_mode:
+      choices:
+        - disable
+        - allow
+        - prefer
+        - require
+    host:
+      min_length: 1
+      max_length: 255
+    name:
+      min_length: 1
+      max_length: 64
+    username:
+      min_length: 1
+      max_length: 64
+  warnings:
+    password: "Consider using environment variables for sensitive data"

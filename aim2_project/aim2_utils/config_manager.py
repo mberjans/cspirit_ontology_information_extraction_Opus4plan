@@ -40,7 +40,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+from watchdog.events import FileSystemEventHandler
 
 
 class ConfigError(Exception):
@@ -66,10 +66,10 @@ class ConfigError(Exception):
 class ConfigFileWatcher(FileSystemEventHandler):
     """
     Custom file system event handler for configuration file changes.
-    
+
     Handles file modification and creation events for configuration files,
     with debouncing to prevent rapid successive reloads.
-    
+
     Attributes:
         config_manager: Reference to the ConfigManager instance
         watched_paths: Set of file paths being watched
@@ -77,11 +77,11 @@ class ConfigFileWatcher(FileSystemEventHandler):
         pending_reloads: Dictionary tracking pending reload operations
         logger: Logger instance for change events
     """
-    
+
     def __init__(self, config_manager, debounce_delay: float = 0.5):
         """
         Initialize the configuration file watcher.
-        
+
         Args:
             config_manager: ConfigManager instance to notify of changes
             debounce_delay: Delay in seconds for debouncing (default: 0.5)
@@ -92,54 +92,56 @@ class ConfigFileWatcher(FileSystemEventHandler):
         self.debounce_delay = debounce_delay
         self.pending_reloads: Dict[str, float] = {}
         self.logger = logging.getLogger(__name__)
-        
+
     def add_watched_path(self, path: str) -> None:
         """Add a path to the set of watched paths."""
         self.watched_paths.add(str(Path(path).resolve()))
-        
+
     def remove_watched_path(self, path: str) -> None:
         """Remove a path from the set of watched paths."""
         self.watched_paths.discard(str(Path(path).resolve()))
-        
+
     def on_modified(self, event):
         """Handle file modification events."""
         if not event.is_directory:
             self._handle_file_change(event.src_path, "modified")
-            
+
     def on_created(self, event):
         """Handle file creation events."""
         if not event.is_directory:
             self._handle_file_change(event.src_path, "created")
-            
+
     def _handle_file_change(self, file_path: str, event_type: str) -> None:
         """
         Handle file change events with debouncing.
-        
+
         Args:
             file_path: Path of the changed file
             event_type: Type of change event (modified/created)
         """
         try:
             resolved_path = str(Path(file_path).resolve())
-            
+
             # Check if this is a file we're watching
             if resolved_path not in self.watched_paths:
                 # Check if it's a config file in a watched directory
                 if not self._is_config_file(file_path):
                     return
-                    
+
                 # Check if parent directory is being watched
                 parent_watched = False
                 for watched_path in self.watched_paths:
-                    if Path(watched_path).is_dir() and resolved_path.startswith(watched_path):
+                    if Path(watched_path).is_dir() and resolved_path.startswith(
+                        watched_path
+                    ):
                         parent_watched = True
                         break
-                        
+
                 if not parent_watched:
                     return
-            
+
             current_time = time.time()
-            
+
             # Check if we already have a pending reload for this file
             if resolved_path in self.pending_reloads:
                 last_change_time = self.pending_reloads[resolved_path]
@@ -147,31 +149,33 @@ class ConfigFileWatcher(FileSystemEventHandler):
                     # Update the pending reload time
                     self.pending_reloads[resolved_path] = current_time
                     return
-            
+
             # Schedule debounced reload
             self.pending_reloads[resolved_path] = current_time
-            
+
             # Start timer for debounced reload
             timer = threading.Timer(
                 self.debounce_delay,
                 self._debounced_reload,
-                args=(resolved_path, event_type, current_time)
+                args=(resolved_path, event_type, current_time),
             )
             timer.daemon = True
             timer.start()
-            
+
         except Exception as e:
             self.logger.error(f"Error handling file change for {file_path}: {e}")
-            
+
     def _is_config_file(self, file_path: str) -> bool:
         """Check if a file is a configuration file based on extension."""
-        config_extensions = {'.yaml', '.yml', '.json'}
+        config_extensions = {".yaml", ".yml", ".json"}
         return Path(file_path).suffix.lower() in config_extensions
-        
-    def _debounced_reload(self, file_path: str, event_type: str, change_time: float) -> None:
+
+    def _debounced_reload(
+        self, file_path: str, event_type: str, change_time: float
+    ) -> None:
         """
         Perform debounced configuration reload.
-        
+
         Args:
             file_path: Path of the changed file
             event_type: Type of change event
@@ -183,21 +187,23 @@ class ConfigFileWatcher(FileSystemEventHandler):
                 if self.pending_reloads[file_path] != change_time:
                     # A more recent change occurred, skip this reload
                     return
-                    
+
                 # Remove from pending reloads
                 del self.pending_reloads[file_path]
-            
+
             self.logger.info(f"Configuration file {event_type}: {file_path}")
-            
+
             # Attempt to reload configuration
-            if hasattr(self.config_manager, 'reload_config'):
+            if hasattr(self.config_manager, "reload_config"):
                 self.config_manager.reload_config()
                 self.logger.info("Configuration reloaded successfully")
             else:
                 self.logger.warning("ConfigManager does not support reload_config")
-                
+
         except Exception as e:
-            self.logger.error(f"Failed to reload configuration after {event_type} of {file_path}: {e}")
+            self.logger.error(
+                f"Failed to reload configuration after {event_type} of {file_path}: {e}"
+            )
 
 
 class ConfigManager:
@@ -234,19 +240,31 @@ class ConfigManager:
         self.backups = {}
         self.watchers = {}  # Legacy watcher storage for backward compatibility
         self.watching = False
-        
+
         # Legacy threading components (maintained for backward compatibility)
         self._watch_thread = None
         self._stop_watching = threading.Event()
-        
+
         # New watchdog components
         self._observer: Optional[Observer] = None
         self._file_watcher: Optional[ConfigFileWatcher] = None
         self._watched_directories: Set[str] = set()
         self._debounce_delay = 0.5  # Default debounce delay in seconds
-        
+
         # Set up logging
         self._logger = logging.getLogger(__name__)
+
+        # Enhanced validation
+        self._validator = None
+
+    @property
+    def validator(self):
+        """Get or create the ConfigValidator instance."""
+        if self._validator is None:
+            from .config_validator import ConfigValidator
+
+            self._validator = ConfigValidator()
+        return self._validator
 
     def load_config(self, config_path: str) -> None:
         """
@@ -281,6 +299,9 @@ class ConfigManager:
 
             # Apply environment variable overrides
             self._apply_env_overrides()
+
+            # Apply decryption to encrypted values
+            self._apply_decryption()
 
             # Perform configuration interpolation
             self._interpolate_config()
@@ -463,6 +484,156 @@ class ConfigManager:
         validator = ConfigValidator()
         return validator.validate_schema(config, schema, strict=strict)
 
+    def validate_with_aim2_schema(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        strict: bool = False,
+        return_report: bool = False,
+    ) -> Any:
+        """
+        Validate configuration against the built-in AIM2 project schema.
+
+        Args:
+            config: Configuration to validate (uses self.config if None)
+            strict: Whether to enforce strict validation
+            return_report: Whether to return detailed validation report
+
+        Returns:
+            bool or ValidationReport: Validation result
+
+        Raises:
+            ConfigError: If validation fails and return_report is False
+        """
+        from .config_validator import ValidationReport
+
+        config_to_validate = config if config is not None else self.config
+
+        if not config_to_validate:
+            if return_report:
+                report = ValidationReport()
+                report.add_error("No configuration to validate")
+                return report
+            else:
+                raise ConfigError("No configuration to validate")
+
+        try:
+            result = self.validator.validate_aim2_config(
+                config_to_validate, strict=strict, return_report=return_report
+            )
+
+            if return_report:
+                return result
+            elif result is True:
+                return True
+            else:
+                raise ConfigError("Configuration validation failed")
+
+        except ValueError as e:
+            raise ConfigError(f"Schema validation error: {str(e)}", e)
+
+    def validate_with_schema(
+        self,
+        schema_name: str,
+        config: Optional[Dict[str, Any]] = None,
+        strict: bool = False,
+        return_report: bool = False,
+    ) -> Any:
+        """
+        Validate configuration against a named schema.
+
+        Args:
+            schema_name: Name of the schema to use
+            config: Configuration to validate (uses self.config if None)
+            strict: Whether to enforce strict validation
+            return_report: Whether to return detailed validation report
+
+        Returns:
+            bool or ValidationReport: Validation result
+
+        Raises:
+            ConfigError: If validation fails
+        """
+        from .config_validator import ValidationReport
+
+        config_to_validate = config if config is not None else self.config
+
+        if not config_to_validate:
+            if return_report:
+                report = ValidationReport()
+                report.add_error("No configuration to validate")
+                return report
+            else:
+                raise ConfigError("No configuration to validate")
+
+        try:
+            result = self.validator.validate_with_schema(
+                config_to_validate,
+                schema_name,
+                strict=strict,
+                return_report=return_report,
+            )
+
+            if return_report:
+                return result
+            elif result is True:
+                return True
+            else:
+                raise ConfigError("Configuration validation failed")
+
+        except ValueError as e:
+            raise ConfigError(f"Schema validation error: {str(e)}", e)
+
+    def get_available_schemas(self) -> List[str]:
+        """
+        Get list of all available validation schemas.
+
+        Returns:
+            List of schema names
+        """
+        return self.validator.get_available_schemas()
+
+    def load_validation_schema(
+        self, file_path: str, name: Optional[str] = None, version: str = "1.0.0"
+    ) -> None:
+        """
+        Load a validation schema from an external file.
+
+        Args:
+            file_path: Path to schema file (JSON or YAML)
+            name: Optional name for the schema (defaults to filename)
+            version: Schema version
+
+        Raises:
+            ConfigError: If schema loading fails
+        """
+        try:
+            self.validator.load_and_register_schema(file_path, name, version)
+        except Exception as e:
+            raise ConfigError(f"Failed to load validation schema: {str(e)}", e)
+
+    def validate_current_config(
+        self,
+        schema_name: str = "aim2_project",
+        strict: bool = False,
+        return_report: bool = False,
+    ) -> Any:
+        """
+        Validate the current configuration against a schema.
+
+        Convenience method that validates the currently loaded configuration.
+
+        Args:
+            schema_name: Name of the schema to use (default: aim2_project)
+            strict: Whether to enforce strict validation
+            return_report: Whether to return detailed validation report
+
+        Returns:
+            bool or ValidationReport: Validation result
+        """
+        return self.validate_with_schema(
+            schema_name, config=None, strict=strict, return_report=return_report
+        )
+
     def merge_configs(
         self, base_config: Dict[str, Any], override_config: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -575,16 +746,16 @@ class ConfigManager:
             self.disable_watch_mode()
 
         self.watching = True
-        
+
         if use_legacy:
             self._enable_legacy_watch_mode(path)
         else:
             self._enable_watchdog_mode(path)
-    
+
     def _enable_legacy_watch_mode(self, path: str) -> None:
         """
         Enable legacy threading-based file watching (for backward compatibility).
-        
+
         Args:
             path (str): Path to watch for changes
         """
@@ -602,25 +773,25 @@ class ConfigManager:
         )
         self._watch_thread.start()
         self._logger.info(f"Legacy file watching enabled for: {path}")
-    
+
     def _enable_watchdog_mode(self, path: str) -> None:
         """
         Enable watchdog-based file watching.
-        
+
         Args:
             path (str): Path to watch for changes (file or directory)
         """
         try:
             path_obj = Path(path)
-            
+
             # Initialize observer if not already done
             if self._observer is None:
                 self._observer = Observer()
-                
+
             # Initialize file watcher if not already done
             if self._file_watcher is None:
                 self._file_watcher = ConfigFileWatcher(self, self._debounce_delay)
-            
+
             # Determine what to watch
             if path_obj.is_file():
                 # Watch the parent directory and track this specific file
@@ -634,25 +805,27 @@ class ConfigManager:
                 self._logger.info(f"Watching config directory: {path}")
             else:
                 raise ConfigError(f"Path does not exist: {path}")
-            
+
             # Add directory to observer if not already watching
             if watch_dir not in self._watched_directories:
                 self._observer.schedule(self._file_watcher, watch_dir, recursive=False)
                 self._watched_directories.add(watch_dir)
                 self._logger.info(f"Added directory to watchdog observer: {watch_dir}")
-            
+
             # Start observer if not already running
             if not self._observer.is_alive():
                 self._observer.start()
                 self._logger.info("Watchdog observer started")
-            
+
             # Maintain legacy watchers dict for backward compatibility
             self.watchers[path] = {
                 "path": path,
-                "last_modified": os.path.getmtime(path) if os.path.exists(path) and path_obj.is_file() else time.time(),
-                "type": "watchdog"
+                "last_modified": os.path.getmtime(path)
+                if os.path.exists(path) and path_obj.is_file()
+                else time.time(),
+                "type": "watchdog",
             }
-            
+
         except Exception as e:
             self.watching = False
             raise ConfigError(f"Failed to enable watchdog mode for {path}: {str(e)}", e)
@@ -665,12 +838,12 @@ class ConfigManager:
         Handles both legacy threading and watchdog-based watching.
         """
         self.watching = False
-        
+
         # Clean up legacy threading components
         self._stop_watching.set()
         if self._watch_thread and self._watch_thread.is_alive():
             self._watch_thread.join(timeout=1.0)
-        
+
         # Clean up watchdog components
         if self._observer is not None:
             try:
@@ -682,43 +855,47 @@ class ConfigManager:
                 self._logger.error(f"Error stopping watchdog observer: {e}")
             finally:
                 self._observer = None
-        
+
         # Clean up file watcher
         if self._file_watcher is not None:
             self._file_watcher.watched_paths.clear()
             self._file_watcher.pending_reloads.clear()
             self._file_watcher = None
-        
+
         # Clear watched directories
         self._watched_directories.clear()
-        
+
         # Clear legacy watchers
         self.watchers.clear()
-        
+
         self._logger.info("File watching disabled")
 
     def add_watch_path(self, path: str) -> None:
         """
         Add an additional path to the existing watch configuration.
-        
+
         This allows watching multiple files or directories simultaneously.
         The watchdog observer must already be running.
-        
+
         Args:
             path (str): Additional path to watch for changes
-            
+
         Raises:
             ConfigError: If watching is not enabled or path setup fails
         """
         if not self.watching:
-            raise ConfigError("Cannot add watch path: watching is not enabled. Call enable_watch_mode() first.")
-        
+            raise ConfigError(
+                "Cannot add watch path: watching is not enabled. Call enable_watch_mode() first."
+            )
+
         if self._observer is None or self._file_watcher is None:
-            raise ConfigError("Cannot add watch path: watchdog components not initialized. Use enable_watch_mode() first.")
-        
+            raise ConfigError(
+                "Cannot add watch path: watchdog components not initialized. Use enable_watch_mode() first."
+            )
+
         try:
             path_obj = Path(path)
-            
+
             if path_obj.is_file():
                 # Watch the parent directory and track this specific file
                 watch_dir = str(path_obj.parent)
@@ -731,63 +908,65 @@ class ConfigManager:
                 self._logger.info(f"Added config directory to watch list: {path}")
             else:
                 raise ConfigError(f"Path does not exist: {path}")
-            
+
             # Add directory to observer if not already watching
             if watch_dir not in self._watched_directories:
                 self._observer.schedule(self._file_watcher, watch_dir, recursive=False)
                 self._watched_directories.add(watch_dir)
                 self._logger.info(f"Added directory to watchdog observer: {watch_dir}")
-            
+
             # Update watchers dict for backward compatibility
             self.watchers[path] = {
                 "path": path,
-                "last_modified": os.path.getmtime(path) if os.path.exists(path) and path_obj.is_file() else time.time(),
-                "type": "watchdog"
+                "last_modified": os.path.getmtime(path)
+                if os.path.exists(path) and path_obj.is_file()
+                else time.time(),
+                "type": "watchdog",
             }
-            
+
         except Exception as e:
             raise ConfigError(f"Failed to add watch path {path}: {str(e)}", e)
-    
+
     def remove_watch_path(self, path: str) -> None:
         """
         Remove a path from the watch configuration.
-        
+
         Args:
             path (str): Path to stop watching
-            
+
         Raises:
             ConfigError: If path removal fails
         """
         if not self.watching or self._file_watcher is None:
             return  # Nothing to remove
-        
+
         try:
             path_obj = Path(path)
             resolved_path = str(path_obj.resolve())
-            
+
             # Remove from file watcher
             self._file_watcher.remove_watched_path(resolved_path)
-            
+
             # Remove from watchers dict
             if path in self.watchers:
                 del self.watchers[path]
-            
+
             self._logger.info(f"Removed path from watch list: {path}")
-            
+
         except Exception as e:
             raise ConfigError(f"Failed to remove watch path {path}: {str(e)}", e)
-    
+
     def watch_config_directory(self, directory: str, recursive: bool = False) -> None:
         """
         Watch an entire directory for configuration file changes.
-        
+
         This is a convenience method that enables watching of all configuration
         files in a directory. Can be used with or without existing watch mode.
-        
+
         Args:
             directory (str): Directory path to watch
             recursive (bool): Whether to watch subdirectories recursively
-            
+
         Raises:
             ConfigError: If directory setup fails
         """
@@ -795,33 +974,37 @@ class ConfigManager:
             dir_path = Path(directory)
             if not dir_path.is_dir():
                 raise ConfigError(f"Directory does not exist: {directory}")
-            
+
             if not self.watching:
                 # Enable watch mode for this directory
                 self.enable_watch_mode(directory)
             else:
                 # Add to existing watch configuration
                 self.add_watch_path(directory)
-            
+
             # If recursive watching is requested, we need to set up additional observers
             if recursive:
                 self._setup_recursive_watching(directory)
-                
-            self._logger.info(f"Watching config directory {'recursively' if recursive else ''}: {directory}")
-            
+
+            self._logger.info(
+                f"Watching config directory {'recursively' if recursive else ''}: {directory}"
+            )
+
         except Exception as e:
-            raise ConfigError(f"Failed to watch config directory {directory}: {str(e)}", e)
-    
+            raise ConfigError(
+                f"Failed to watch config directory {directory}: {str(e)}", e
+            )
+
     def _setup_recursive_watching(self, directory: str) -> None:
         """
         Set up recursive watching for a directory.
-        
+
         Args:
             directory (str): Directory to watch recursively
         """
         if self._observer is None or self._file_watcher is None:
             return
-        
+
         try:
             # Remove existing non-recursive watch if it exists
             if directory in self._watched_directories:
@@ -829,45 +1012,47 @@ class ConfigManager:
                 # Note: watchdog doesn't support changing recursion on existing watch
                 # so we add a new watch for recursive monitoring
                 pass
-            
+
             # Add recursive watch
             self._observer.schedule(self._file_watcher, directory, recursive=True)
             self._watched_directories.add(f"{directory}:recursive")
             self._logger.info(f"Added recursive watching for directory: {directory}")
-            
+
         except Exception as e:
-            self._logger.error(f"Failed to setup recursive watching for {directory}: {e}")
-    
+            self._logger.error(
+                f"Failed to setup recursive watching for {directory}: {e}"
+            )
+
     def set_debounce_delay(self, delay: float) -> None:
         """
         Set the debounce delay for file change events.
-        
+
         Args:
             delay (float): Delay in seconds (minimum 0.1, maximum 5.0)
-            
+
         Raises:
             ConfigError: If delay is outside valid range
         """
         if not 0.1 <= delay <= 5.0:
             raise ConfigError("Debounce delay must be between 0.1 and 5.0 seconds")
-        
+
         self._debounce_delay = delay
-        
+
         if self._file_watcher is not None:
             self._file_watcher.debounce_delay = delay
-            
+
         self._logger.info(f"Set debounce delay to {delay} seconds")
-    
+
     def get_watched_paths(self) -> List[str]:
         """
         Get a list of all currently watched paths.
-        
+
         Returns:
             List[str]: List of watched file and directory paths
         """
         if self._file_watcher is None:
             return list(self.watchers.keys())  # Fallback to legacy watchers
-        
+
         return list(self._file_watcher.watched_paths)
 
     def is_watching(self) -> bool:
@@ -1070,6 +1255,21 @@ class ConfigManager:
                 return match.group(0)
 
         return re.sub(pattern, replace_var, value)
+
+    def _apply_decryption(self) -> None:
+        """Apply decryption to encrypted configuration values."""
+        self.config = self._decrypt_recursive(self.config)
+
+    def _decrypt_recursive(self, obj: Any) -> Any:
+        """Recursively decrypt encrypted configuration values."""
+        if isinstance(obj, dict):
+            return {k: self._decrypt_recursive(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._decrypt_recursive(item) for item in obj]
+        elif isinstance(obj, str) and obj.startswith("encrypted:"):
+            return self.decrypt_value(obj)
+        else:
+            return obj
 
     def _watch_file_changes(self, file_path: str) -> None:
         """Watch for file changes and reload configuration."""

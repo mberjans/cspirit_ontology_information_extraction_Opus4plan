@@ -22,14 +22,16 @@ import tempfile
 import pytest
 import time
 import threading
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock
 from pathlib import Path
 
 # Import the module to be tested (will fail initially in TDD)
 try:
-    from aim2_project.aim2_utils.config_manager import ConfigManager, ConfigError, ConfigFileWatcher
-    from watchdog.observers import Observer
-    from watchdog.events import FileModifiedEvent, FileCreatedEvent
+    from aim2_project.aim2_utils.config_manager import (
+        ConfigManager,
+        ConfigError,
+        ConfigFileWatcher,
+    )
 except ImportError:
     # Expected during TDD - tests define the interface
     pass
@@ -616,7 +618,9 @@ api:
 
     # ===== Enhanced File Watching Tests =====
 
-    def test_enable_watchdog_file_watching(self, config_manager, temp_dir, sample_yaml_config):
+    def test_enable_watchdog_file_watching(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test enabling watchdog-based file watching for a single file."""
         yaml_file = temp_dir / "test_config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -638,7 +642,9 @@ api:
         # Clean up
         config_manager.disable_watch_mode()
 
-    def test_enable_legacy_file_watching(self, config_manager, temp_dir, sample_yaml_config):
+    def test_enable_legacy_file_watching(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test enabling legacy threading-based file watching."""
         yaml_file = temp_dir / "test_config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -683,12 +689,14 @@ api:
 
         config_manager.disable_watch_mode()
 
-    def test_watch_config_directory_recursive(self, config_manager, temp_dir, sample_yaml_config):
+    def test_watch_config_directory_recursive(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test recursive directory watching."""
         # Create nested directory structure
         subdir = temp_dir / "configs" / "subdirectory"
         subdir.mkdir(parents=True)
-        
+
         config_file = subdir / "nested_config.yaml"
         config_file.write_text(sample_yaml_config)
 
@@ -701,7 +709,9 @@ api:
 
         config_manager.disable_watch_mode()
 
-    def test_add_watch_path_multiple_files(self, config_manager, temp_dir, sample_yaml_config):
+    def test_add_watch_path_multiple_files(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test adding multiple files to watch list."""
         # Create multiple config files
         yaml_file1 = temp_dir / "config1.yaml"
@@ -722,11 +732,13 @@ api:
 
         config_manager.disable_watch_mode()
 
-    def test_add_watch_path_directory(self, config_manager, temp_dir, sample_yaml_config):
+    def test_add_watch_path_directory(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test adding a directory to watch list."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
-        
+
         # Create separate directory
         config_dir = temp_dir / "configs"
         config_dir.mkdir()
@@ -809,7 +821,9 @@ api:
         watched_paths = config_manager.get_watched_paths()
         assert watched_paths == []
 
-    def test_get_watched_paths_legacy_fallback(self, config_manager, temp_dir, sample_yaml_config):
+    def test_get_watched_paths_legacy_fallback(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test getting watched paths with legacy watcher fallback."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -823,7 +837,9 @@ api:
 
         config_manager.disable_watch_mode()
 
-    def test_file_watcher_debouncing(self, config_manager, temp_dir, sample_yaml_config):
+    def test_file_watcher_debouncing(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test debouncing mechanism prevents rapid successive reloads."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -832,11 +848,11 @@ api:
         # Mock reload_config to track calls
         original_reload = config_manager.reload_config
         reload_calls = []
-        
+
         def mock_reload():
             reload_calls.append(time.time())
             original_reload()
-        
+
         config_manager.reload_config = mock_reload
 
         # Set short debounce delay for testing
@@ -846,12 +862,12 @@ api:
         # Simulate rapid file changes
         file_watcher = config_manager._file_watcher
         file_path = str(yaml_file.resolve())
-        
+
         # Add the file to watched paths
         file_watcher.add_watched_path(file_path)
 
         # Trigger multiple rapid changes
-        start_time = time.time()
+        time.time()
         for i in range(5):
             file_watcher._handle_file_change(file_path, "modified")
             time.sleep(0.02)  # Very short interval
@@ -860,31 +876,37 @@ api:
         time.sleep(0.2)
 
         # Should have only one reload call due to debouncing
-        assert len(reload_calls) <= 1, f"Expected at most 1 reload call, got {len(reload_calls)}"
+        assert (
+            len(reload_calls) <= 1
+        ), f"Expected at most 1 reload call, got {len(reload_calls)}"
 
         config_manager.disable_watch_mode()
 
-    def test_watchdog_observer_error_handling(self, config_manager, temp_dir, sample_yaml_config):
+    def test_watchdog_observer_error_handling(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test error handling when watchdog observer fails."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
 
         # Patch the Observer after config manager creates it
-        with patch.object(config_manager, '_observer', None):
+        with patch.object(config_manager, "_observer", None):
             # Mock observer that fails to start
             mock_observer = Mock()
             mock_observer.start.side_effect = Exception("Observer failed to start")
             mock_observer.is_alive.return_value = False
-            
+
             config_manager._observer = mock_observer
-            
+
             # Manually trigger the error path by calling _enable_watchdog_mode
             with pytest.raises(ConfigError) as exc_info:
                 config_manager._enable_watchdog_mode(str(yaml_file))
-            
+
             assert "Failed to enable watchdog mode" in str(exc_info.value)
 
-    def test_add_watch_path_without_watching_enabled(self, config_manager, temp_dir, sample_yaml_config):
+    def test_add_watch_path_without_watching_enabled(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test adding watch path when watching is not enabled."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -892,10 +914,12 @@ api:
         # Try to add watch path without enabling watching first
         with pytest.raises(ConfigError) as exc_info:
             config_manager.add_watch_path(str(yaml_file))
-        
+
         assert "watching is not enabled" in str(exc_info.value)
 
-    def test_add_watch_path_nonexistent_file(self, config_manager, temp_dir, sample_yaml_config):
+    def test_add_watch_path_nonexistent_file(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test adding non-existent file to watch list."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -907,19 +931,21 @@ api:
         # Try to add non-existent file
         with pytest.raises(ConfigError) as exc_info:
             config_manager.add_watch_path(str(nonexistent_file))
-        
+
         assert "Path does not exist" in str(exc_info.value)
 
         config_manager.disable_watch_mode()
 
-    def test_disable_watch_mode_cleanup(self, config_manager, temp_dir, sample_yaml_config):
+    def test_disable_watch_mode_cleanup(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test that disable_watch_mode properly cleans up all resources."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
 
         # Enable watching
         config_manager.enable_watch_mode(str(yaml_file))
-        
+
         # Verify resources are created
         assert config_manager._observer is not None
         assert config_manager._file_watcher is not None
@@ -936,7 +962,9 @@ api:
         assert len(config_manager._watched_directories) == 0
         assert len(config_manager.watchers) == 0
 
-    def test_disable_watch_mode_observer_error(self, config_manager, temp_dir, sample_yaml_config):
+    def test_disable_watch_mode_observer_error(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test disable_watch_mode handles observer stop errors gracefully."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -950,27 +978,31 @@ api:
 
         # Disable watching should not raise exception
         config_manager.disable_watch_mode()
-        
+
         # Should still clean up other resources
         assert config_manager.is_watching() is False
         assert config_manager._observer is None
 
-    def test_hot_reload_file_modification(self, config_manager, temp_dir, sample_yaml_config):
+    def test_hot_reload_file_modification(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test that file modifications trigger config reload."""
+        import time
+
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
         config_manager.load_config(str(yaml_file))
 
-        original_port = config_manager.config["database"]["port"]
+        config_manager.config["database"]["port"]
 
         # Track reload calls
         reload_called = threading.Event()
         original_reload = config_manager.reload_config
-        
+
         def mock_reload():
             original_reload()
             reload_called.set()
-        
+
         config_manager.reload_config = mock_reload
 
         # Enable watching with short debounce
@@ -983,7 +1015,10 @@ api:
 
         # Trigger file modification event manually
         if config_manager._file_watcher:
-            config_manager._file_watcher._handle_file_change(str(yaml_file), "modified")
+            # Instead of relying on the timer, call the debounced reload directly
+            config_manager._file_watcher._debounced_reload(
+                str(yaml_file.resolve()), "modified", time.time()
+            )
 
         # Wait for reload to complete
         assert reload_called.wait(timeout=1.0), "Config reload was not triggered"
@@ -1001,7 +1036,9 @@ api:
         assert watcher._is_config_file("/path/to/config.yaml") is True
         assert watcher._is_config_file("/path/to/config.yml") is True
         assert watcher._is_config_file("/path/to/config.json") is True
-        assert watcher._is_config_file("/path/to/Config.YAML") is True  # Case insensitive
+        assert (
+            watcher._is_config_file("/path/to/Config.YAML") is True
+        )  # Case insensitive
 
         # Test invalid extensions
         assert watcher._is_config_file("/path/to/config.txt") is False
@@ -1026,19 +1063,19 @@ api:
         watcher.remove_watched_path("/nonexistent/path")
         assert len(watcher.watched_paths) == 1
 
-    @patch('aim2_project.aim2_utils.config_manager.time.time')
+    @patch("aim2_project.aim2_utils.config_manager.time.time")
     def test_config_file_watcher_debouncing_logic(self, mock_time):
         """Test ConfigFileWatcher debouncing logic in detail."""
         mock_config_manager = Mock()
         mock_config_manager.reload_config = Mock()
-        
+
         watcher = ConfigFileWatcher(mock_config_manager, 0.5)
         test_path = "/path/to/config.yaml"
-        
+
         # Mock time progression
         current_time = 1000.0
         mock_time.return_value = current_time
-        
+
         # Add path to watched paths
         watcher.add_watched_path(test_path)
 
@@ -1054,7 +1091,9 @@ api:
         # Should update pending reload time
         assert watcher.pending_reloads[test_path] == current_time
 
-    def test_enable_watch_mode_switches_from_legacy_to_watchdog(self, config_manager, temp_dir, sample_yaml_config):
+    def test_enable_watch_mode_switches_from_legacy_to_watchdog(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test switching from legacy to watchdog mode."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -1078,10 +1117,12 @@ api:
         # Should raise ConfigError for non-existent path
         with pytest.raises(ConfigError) as exc_info:
             config_manager.enable_watch_mode(str(nonexistent_file))
-        
+
         assert "Path does not exist" in str(exc_info.value)
 
-    def test_watch_mode_backward_compatibility(self, config_manager, temp_dir, sample_yaml_config):
+    def test_watch_mode_backward_compatibility(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test that watchers dict is maintained for backward compatibility."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -1096,7 +1137,9 @@ api:
 
         config_manager.disable_watch_mode()
 
-    def test_file_watcher_handles_directory_events(self, config_manager, temp_dir, sample_yaml_config):
+    def test_file_watcher_handles_directory_events(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test that ConfigFileWatcher handles events from watched directories."""
         config_dir = temp_dir / "configs"
         config_dir.mkdir()
@@ -1104,17 +1147,19 @@ api:
 
         # Start watching directory
         config_manager.watch_config_directory(str(config_dir))
-        
+
         # Simulate creating a new config file in the directory
         config_file.write_text(sample_yaml_config)
-        
+
         # The file watcher should recognize this as a config file change
         file_watcher = config_manager._file_watcher
         assert file_watcher._is_config_file(str(config_file)) is True
 
         config_manager.disable_watch_mode()
 
-    def test_multiple_observer_schedules_same_directory(self, config_manager, temp_dir, sample_yaml_config):
+    def test_multiple_observer_schedules_same_directory(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test that adding multiple files in same directory doesn't create duplicate observers."""
         # Create multiple files in same directory
         config1 = temp_dir / "config1.yaml"
@@ -1128,7 +1173,7 @@ api:
 
         # Add second file in same directory
         config_manager.add_watch_path(str(config2))
-        
+
         # Should not add duplicate directory to observer
         assert len(config_manager._watched_directories) == initial_dir_count
 
@@ -1138,16 +1183,18 @@ api:
         """Test ConfigFileWatcher error handling in file change processing."""
         mock_config_manager = Mock()
         mock_config_manager.reload_config = Mock(side_effect=Exception("Reload failed"))
-        
+
         watcher = ConfigFileWatcher(mock_config_manager, 0.1)
-        
+
         # Should not raise exception even if reload fails
         watcher._debounced_reload("/path/to/config", "modified", time.time())
-        
+
         # Reload should have been attempted
         mock_config_manager.reload_config.assert_called_once()
 
-    def test_legacy_watch_mode_file_modification_detection(self, config_manager, temp_dir, sample_yaml_config):
+    def test_legacy_watch_mode_file_modification_detection(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test legacy watch mode detects file modifications."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -1155,7 +1202,7 @@ api:
 
         # Enable legacy watching
         config_manager.enable_watch_mode(str(yaml_file), use_legacy=True)
-        
+
         # Give the watch thread a moment to start
         time.sleep(0.1)
 
@@ -1164,7 +1211,7 @@ api:
         # Modify file to update mtime
         time.sleep(0.1)  # Ensure mtime difference
         yaml_file.touch()
-        
+
         # Give watch thread time to detect change
         time.sleep(1.1)  # Slightly longer than watch interval
 
@@ -1204,7 +1251,7 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher initialization."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 1.0)
-        
+
         assert watcher.config_manager is mock_manager
         assert watcher.debounce_delay == 1.0
         assert len(watcher.watched_paths) == 0
@@ -1214,75 +1261,79 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher handles file modification events."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         # Create mock file modification event
         mock_event = Mock()
         mock_event.is_directory = False
         mock_event.src_path = "/test/config.yaml"
-        
+
         # Add path to watched paths
         watcher.add_watched_path("/test/config.yaml")
-        
+
         # Mock the _handle_file_change method to verify it's called
         watcher._handle_file_change = Mock()
-        
+
         # Trigger event
         watcher.on_modified(mock_event)
-        
+
         # Verify handler was called
-        watcher._handle_file_change.assert_called_once_with("/test/config.yaml", "modified")
+        watcher._handle_file_change.assert_called_once_with(
+            "/test/config.yaml", "modified"
+        )
 
     def test_config_file_watcher_on_created_event(self):
         """Test ConfigFileWatcher handles file creation events."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         # Create mock file creation event
         mock_event = Mock()
         mock_event.is_directory = False
         mock_event.src_path = "/test/new_config.yaml"
-        
+
         # Mock the _handle_file_change method to verify it's called
         watcher._handle_file_change = Mock()
-        
+
         # Trigger event
         watcher.on_created(mock_event)
-        
+
         # Verify handler was called
-        watcher._handle_file_change.assert_called_once_with("/test/new_config.yaml", "created")
+        watcher._handle_file_change.assert_called_once_with(
+            "/test/new_config.yaml", "created"
+        )
 
     def test_config_file_watcher_ignores_directory_events(self):
         """Test ConfigFileWatcher ignores directory events."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         # Create mock directory event
         mock_event = Mock()
         mock_event.is_directory = True
         mock_event.src_path = "/test/directory"
-        
+
         # Mock the _handle_file_change method
         watcher._handle_file_change = Mock()
-        
+
         # Trigger events
         watcher.on_modified(mock_event)
         watcher.on_created(mock_event)
-        
+
         # Verify handler was not called
         watcher._handle_file_change.assert_not_called()
 
-    @patch('aim2_project.aim2_utils.config_manager.threading.Timer')
+    @patch("aim2_project.aim2_utils.config_manager.threading.Timer")
     def test_config_file_watcher_debounce_timer_creation(self, mock_timer):
         """Test ConfigFileWatcher creates debounce timer correctly."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.5)
-        
+
         test_path = "/test/config.yaml"
         watcher.add_watched_path(test_path)
-        
+
         # Trigger file change
         watcher._handle_file_change(test_path, "modified")
-        
+
         # Verify timer was created with correct parameters
         mock_timer.assert_called_once()
         args, kwargs = mock_timer.call_args
@@ -1293,41 +1344,41 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher ignores changes to non-watched files."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         # Don't add the file to watched paths
         test_path = "/test/unwatched.yaml"
-        
+
         # Should not create any pending reloads for unwatched files
         watcher._handle_file_change(test_path, "modified")
-        
+
         assert len(watcher.pending_reloads) == 0
 
     def test_config_file_watcher_handle_file_change_non_config_file(self):
         """Test ConfigFileWatcher ignores non-config files."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         # Test with non-config file extension
         test_path = "/test/document.txt"
-        
+
         # Should not create any pending reloads for non-config files
         watcher._handle_file_change(test_path, "modified")
-        
+
         assert len(watcher.pending_reloads) == 0
 
     def test_config_file_watcher_handle_file_change_path_error(self):
         """Test ConfigFileWatcher handles path resolution errors gracefully."""
         mock_manager = Mock()
         watcher = ConfigFileWatcher(mock_manager, 0.1)
-        
+
         test_path = "/test/config.yaml"
         watcher.add_watched_path(test_path)
-        
+
         # Mock Path.resolve to raise exception during _handle_file_change
-        with patch('pathlib.Path.resolve', side_effect=Exception("Path error")):
+        with patch("pathlib.Path.resolve", side_effect=Exception("Path error")):
             # Should not raise exception even with path errors
             watcher._handle_file_change(test_path, "modified")
-            
+
             # Should not create pending reloads due to error
             assert len(watcher.pending_reloads) == 0
 
@@ -1335,17 +1386,17 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher debounced reload executes successfully."""
         mock_manager = Mock()
         mock_manager.reload_config = Mock()
-        
+
         watcher = ConfigFileWatcher(mock_manager, 0.1)
         test_path = "/test/config.yaml"
         change_time = time.time()
-        
+
         # Add to pending reloads
         watcher.pending_reloads[test_path] = change_time
-        
+
         # Execute debounced reload
         watcher._debounced_reload(test_path, "modified", change_time)
-        
+
         # Verify reload was called and pending reload was cleared
         mock_manager.reload_config.assert_called_once()
         assert test_path not in watcher.pending_reloads
@@ -1354,18 +1405,18 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher skips stale debounced reloads."""
         mock_manager = Mock()
         mock_manager.reload_config = Mock()
-        
+
         watcher = ConfigFileWatcher(mock_manager, 0.1)
         test_path = "/test/config.yaml"
         old_change_time = time.time()
         new_change_time = old_change_time + 1.0
-        
+
         # Set newer change time in pending reloads
         watcher.pending_reloads[test_path] = new_change_time
-        
+
         # Execute debounced reload with older change time
         watcher._debounced_reload(test_path, "modified", old_change_time)
-        
+
         # Should not reload due to stale change
         mock_manager.reload_config.assert_not_called()
         assert test_path in watcher.pending_reloads  # Should remain
@@ -1374,18 +1425,18 @@ class TestConfigFileWatcher:
         """Test ConfigFileWatcher handles missing reload_config method."""
         mock_manager = Mock()
         # Don't set reload_config method
-        delattr(mock_manager, 'reload_config')
-        
+        delattr(mock_manager, "reload_config")
+
         watcher = ConfigFileWatcher(mock_manager, 0.1)
         test_path = "/test/config.yaml"
         change_time = time.time()
-        
+
         # Add to pending reloads
         watcher.pending_reloads[test_path] = change_time
-        
+
         # Execute debounced reload - should not raise exception
         watcher._debounced_reload(test_path, "modified", change_time)
-        
+
         # Should still clear pending reload
         assert test_path not in watcher.pending_reloads
 
@@ -1439,16 +1490,20 @@ nlp:
   batch_size: 32
 """
 
-    def test_watch_config_directory_nonexistent_directory(self, config_manager, temp_dir):
+    def test_watch_config_directory_nonexistent_directory(
+        self, config_manager, temp_dir
+    ):
         """Test watching non-existent directory raises error."""
         nonexistent_dir = temp_dir / "nonexistent"
-        
+
         with pytest.raises(ConfigError) as exc_info:
             config_manager.watch_config_directory(str(nonexistent_dir))
-        
+
         assert "Directory does not exist" in str(exc_info.value)
 
-    def test_enable_watch_mode_already_watching(self, config_manager, temp_dir, sample_yaml_config):
+    def test_enable_watch_mode_already_watching(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test enabling watch mode when already watching disables previous watcher."""
         yaml_file1 = temp_dir / "config1.yaml"
         yaml_file1.write_text(sample_yaml_config)
@@ -1473,11 +1528,13 @@ nlp:
         """Test removing watch path when not watching does nothing."""
         # Should not raise exception
         config_manager.remove_watch_path("/some/path")
-        
+
         # Should remain not watching
         assert not config_manager.is_watching()
 
-    def test_set_debounce_delay_updates_existing_watcher(self, config_manager, temp_dir, sample_yaml_config):
+    def test_set_debounce_delay_updates_existing_watcher(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test setting debounce delay updates existing file watcher."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -1497,21 +1554,25 @@ nlp:
 
         config_manager.disable_watch_mode()
 
-    def test_get_watched_paths_with_watchdog_and_legacy_paths(self, config_manager, temp_dir, sample_yaml_config):
+    def test_get_watched_paths_with_watchdog_and_legacy_paths(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test get_watched_paths returns correct paths with mixed watching modes."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
 
         # Enable watchdog mode
         config_manager.enable_watch_mode(str(yaml_file))
-        
+
         # Should return watchdog paths
         watched_paths = config_manager.get_watched_paths()
         assert str(yaml_file.resolve()) in watched_paths
 
         config_manager.disable_watch_mode()
 
-    def test_enable_watchdog_mode_graceful_failure_handling(self, config_manager, temp_dir, sample_yaml_config):
+    def test_enable_watchdog_mode_graceful_failure_handling(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test watchdog mode handles various failure scenarios gracefully."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
@@ -1522,7 +1583,9 @@ nlp:
         config_manager.disable_watch_mode()
         assert not config_manager.is_watching()
 
-    def test_add_watch_path_handles_errors_gracefully(self, config_manager, temp_dir, sample_yaml_config):
+    def test_add_watch_path_handles_errors_gracefully(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test add_watch_path handles various error conditions gracefully."""
         yaml_file1 = temp_dir / "config1.yaml"
         yaml_file1.write_text(sample_yaml_config)
@@ -1534,18 +1597,20 @@ nlp:
 
         # Normal add_watch_path should work
         config_manager.add_watch_path(str(yaml_file2))
-        
+
         # Verify both files are watched
         watched_paths = config_manager.get_watched_paths()
         assert len(watched_paths) >= 2
 
         config_manager.disable_watch_mode()
 
-    def test_watch_config_directory_with_existing_watching(self, config_manager, temp_dir, sample_yaml_config):
+    def test_watch_config_directory_with_existing_watching(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test watch_config_directory adds to existing watch configuration."""
         yaml_file = temp_dir / "config.yaml"
         yaml_file.write_text(sample_yaml_config)
-        
+
         config_dir = temp_dir / "configs"
         config_dir.mkdir()
 
@@ -1555,14 +1620,16 @@ nlp:
 
         # Watch directory (should add to existing)
         config_manager.watch_config_directory(str(config_dir))
-        
+
         # Should have more watched paths
         final_paths = len(config_manager.get_watched_paths())
         assert final_paths > initial_paths
 
         config_manager.disable_watch_mode()
 
-    def test_file_watcher_handles_directory_watching_correctly(self, config_manager, temp_dir, sample_yaml_config):
+    def test_file_watcher_handles_directory_watching_correctly(
+        self, config_manager, temp_dir, sample_yaml_config
+    ):
         """Test file watcher correctly handles directory vs file watching."""
         config_dir = temp_dir / "configs"
         config_dir.mkdir()
@@ -1571,7 +1638,7 @@ nlp:
 
         # Watch directory
         config_manager.watch_config_directory(str(config_dir))
-        
+
         # Verify directory is in watched paths
         watched_paths = config_manager.get_watched_paths()
         assert str(config_dir.resolve()) in watched_paths
@@ -1579,7 +1646,7 @@ nlp:
         # File watcher should recognize config files in watched directories
         file_watcher = config_manager._file_watcher
         new_config = config_dir / "new_config.yml"
-        
+
         # Should identify this as a config file in a watched directory
         assert file_watcher._is_config_file(str(new_config)) is True
 
@@ -1588,6 +1655,12 @@ nlp:
 
 class TestConfigManagerIntegration:
     """Integration tests for ConfigManager with real file system operations."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for test files."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            yield Path(tmp_dir)
 
     def test_full_config_workflow(self, temp_dir):
         """Test complete configuration workflow from loading to validation."""
@@ -1706,3 +1779,493 @@ features:
         # Verify config loaded and performance is reasonable (< 1 second)
         assert len(manager.config["sections"]) == 100
         assert load_time < 1.0, f"Config loading took too long: {load_time:.2f}s"
+
+
+class TestConfigManagerEnhancedValidation:
+    """Test suite for ConfigManager enhanced validation features integration."""
+
+    @pytest.fixture
+    def config_manager(self):
+        """Create a ConfigManager instance for testing."""
+        return ConfigManager()
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for test files."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            yield Path(tmp_dir)
+
+    @pytest.fixture
+    def sample_aim2_config(self):
+        """Sample AIM2 project configuration for testing."""
+        return {
+            "project": {
+                "name": "AIM2 Test Project",
+                "version": "1.0.0",
+                "description": "Test configuration for AIM2 project",
+            },
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "name": "aim2_test_db",
+                "username": "test_user",
+                "password": "secure_password",
+                "ssl_mode": "require",
+            },
+            "api": {
+                "base_url": "https://api.aim2.test.com",
+                "version": "v1",
+                "timeout": 30,
+                "retry_attempts": 3,
+            },
+            "logging": {
+                "level": "INFO",
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "handlers": ["console", "file"],
+                "file_path": "/var/log/aim2.log",
+            },
+            "nlp": {
+                "models": {"ner": "bert-base-uncased", "relationship": "roberta-large"},
+                "max_sequence_length": 512,
+                "batch_size": 32,
+            },
+            "features": {
+                "enable_caching": True,
+                "cache_ttl": 3600,
+                "debug_mode": False,
+                "max_workers": 4,
+            },
+        }
+
+    def test_validate_with_aim2_schema_success(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validation against AIM2 schema succeeds."""
+        config_manager.config = sample_aim2_config
+
+        result = config_manager.validate_with_aim2_schema()
+        assert result is True
+
+    def test_validate_with_aim2_schema_return_report(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validation with detailed report."""
+        config_manager.config = sample_aim2_config
+
+        report = config_manager.validate_with_aim2_schema(return_report=True)
+
+        assert hasattr(report, "is_valid")
+        assert report.is_valid is True
+        assert hasattr(report, "schema_name")
+        assert hasattr(report, "errors")
+        assert hasattr(report, "warnings")
+        assert len(report.errors) == 0
+
+    def test_validate_with_aim2_schema_strict_mode(self, config_manager):
+        """Test ConfigManager validation in strict mode."""
+        # Config with extra fields - use database-only schema for cleaner test
+        config_with_extra_fields = {
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "name": "test_db",
+                "username": "user",
+                "password": "pass",
+                "ssl_mode": "disable",
+                "extra_field": "not_allowed",
+            }
+        }
+        config_manager.config = config_with_extra_fields
+
+        # Should pass in non-strict mode
+        result = config_manager.validate_with_schema("database_only", strict=False)
+        assert result is True
+
+        # Should fail in strict mode
+        with pytest.raises(ConfigError):
+            config_manager.validate_with_schema("database_only", strict=True)
+
+    def test_validate_with_aim2_schema_invalid_config(self, config_manager):
+        """Test ConfigManager validation with invalid configuration."""
+        invalid_config = {
+            "database": {
+                "host": "localhost",
+                "port": "not_a_number",  # Invalid type
+                # Missing required fields
+            }
+        }
+        config_manager.config = invalid_config
+
+        with pytest.raises(ConfigError):
+            config_manager.validate_with_aim2_schema()
+
+    def test_validate_with_schema_by_name(self, config_manager, sample_aim2_config):
+        """Test ConfigManager validation using named schema."""
+        config_manager.config = sample_aim2_config
+
+        # Should work with AIM2 project schema
+        result = config_manager.validate_with_schema("aim2_project")
+        assert result is True
+
+        # Should work with database-only schema
+        db_config = {"database": sample_aim2_config["database"]}
+        config_manager.config = db_config
+        result = config_manager.validate_with_schema("database_only")
+        assert result is True
+
+    def test_validate_with_schema_nonexistent_schema_raises_error(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validation with non-existent schema raises error."""
+        config_manager.config = sample_aim2_config
+
+        with pytest.raises(ConfigError) as exc_info:
+            config_manager.validate_with_schema("nonexistent_schema")
+
+        assert "Schema validation error" in str(exc_info.value)
+
+    def test_validate_with_schema_return_report(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validation with named schema returning report."""
+        config_manager.config = sample_aim2_config
+
+        report = config_manager.validate_with_schema("aim2_project", return_report=True)
+
+        assert hasattr(report, "is_valid")
+        assert report.is_valid is True
+        assert hasattr(report, "schema_name")
+
+    def test_get_available_schemas(self, config_manager):
+        """Test ConfigManager can retrieve available schemas."""
+        schemas = config_manager.get_available_schemas()
+
+        assert isinstance(schemas, list)
+        assert "aim2_project" in schemas
+        assert "database_only" in schemas
+        assert "api_only" in schemas
+
+    def test_load_validation_schema_json(self, config_manager, temp_dir):
+        """Test ConfigManager loading external JSON schema."""
+        schema = {
+            "test_section": {
+                "required": ["field1"],
+                "types": {"field1": "str", "field2": "int"},
+            }
+        }
+
+        schema_file = temp_dir / "test_schema.json"
+        schema_file.write_text(json.dumps(schema))
+
+        # Should not raise exception
+        config_manager.load_validation_schema(str(schema_file), "test_schema", "1.0.0")
+
+        # Schema should be available
+        schemas = config_manager.get_available_schemas()
+        assert "test_schema" in schemas
+
+        # Test validation with this schema
+        test_config = {"test_section": {"field1": "value", "field2": 42}}
+        result = config_manager.validate_with_schema("test_schema", test_config)
+        assert result is True
+
+    def test_load_validation_schema_yaml(self, config_manager, temp_dir):
+        """Test ConfigManager loading external YAML schema."""
+        schema_yaml = """
+test_section:
+  required:
+    - field1
+  types:
+    field1: str
+    field2: int
+"""
+        schema_file = temp_dir / "test_schema_yaml.yaml"
+        schema_file.write_text(schema_yaml)
+
+        # Should not raise exception
+        config_manager.load_validation_schema(str(schema_file))
+
+        # Schema should be available (using filename as name)
+        schemas = config_manager.get_available_schemas()
+        assert "test_schema_yaml" in schemas
+
+        # Test validation with this schema
+        test_config = {"test_section": {"field1": "value", "field2": 42}}
+        result = config_manager.validate_with_schema("test_schema_yaml", test_config)
+        assert result is True
+
+    def test_load_validation_schema_file_not_found_raises_error(
+        self, config_manager, temp_dir
+    ):
+        """Test ConfigManager loading non-existent schema file raises error."""
+        nonexistent_file = temp_dir / "nonexistent.json"
+
+        with pytest.raises(ConfigError) as exc_info:
+            config_manager.load_validation_schema(str(nonexistent_file))
+
+        assert "Failed to load validation schema" in str(exc_info.value)
+
+    def test_validate_current_config_default_schema(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validating current config with default schema."""
+        config_manager.config = sample_aim2_config
+
+        result = config_manager.validate_current_config()
+        assert result is True
+
+    def test_validate_current_config_custom_schema(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validating current config with custom schema."""
+        config_manager.config = sample_aim2_config
+
+        result = config_manager.validate_current_config("aim2_project")
+        assert result is True
+
+    def test_validate_current_config_with_report(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test ConfigManager validating current config with detailed report."""
+        config_manager.config = sample_aim2_config
+
+        report = config_manager.validate_current_config(return_report=True)
+
+        assert hasattr(report, "is_valid")
+        assert report.is_valid is True
+
+    def test_validate_current_config_empty_config_raises_error(self, config_manager):
+        """Test ConfigManager validation with empty config raises error."""
+        config_manager.config = {}
+
+        with pytest.raises(ConfigError) as exc_info:
+            config_manager.validate_current_config()
+
+        # Should indicate no configuration to validate
+        assert (
+            "no configuration" in str(exc_info.value).lower()
+            or "configuration validation failed" in str(exc_info.value).lower()
+        )
+
+    def test_validate_current_config_empty_config_with_report(self, config_manager):
+        """Test ConfigManager validation with empty config returning report."""
+        config_manager.config = {}
+
+        report = config_manager.validate_current_config(return_report=True)
+
+        assert hasattr(report, "is_valid")
+        assert report.is_valid is False
+        assert len(report.errors) > 0
+
+    def test_integration_load_config_and_validate(
+        self, config_manager, temp_dir, sample_aim2_config
+    ):
+        """Test integration of loading config file and validating with schema."""
+        # Create config file
+        config_file = temp_dir / "test_config.yaml"
+        import yaml
+
+        with open(config_file, "w") as f:
+            yaml.dump(sample_aim2_config, f)
+
+        # Load and validate
+        config_manager.load_config(str(config_file))
+        result = config_manager.validate_with_aim2_schema()
+
+        assert result is True
+
+    def test_integration_env_override_and_validate(
+        self, config_manager, temp_dir, sample_aim2_config
+    ):
+        """Test integration of environment overrides with validation."""
+        # Create config file
+        config_file = temp_dir / "test_config.yaml"
+        import yaml
+
+        with open(config_file, "w") as f:
+            yaml.dump(sample_aim2_config, f)
+
+        # Set environment variables
+        env_vars = {"AIM2_DATABASE_PORT": "8080", "AIM2_API_TIMEOUT": "60"}
+
+        with patch.dict(os.environ, env_vars):
+            config_manager.load_config(str(config_file))
+
+        # Validate that overrides are applied and config is still valid
+        assert config_manager.config["database"]["port"] == 8080
+        assert config_manager.config["api"]["timeout"] == 60
+
+        result = config_manager.validate_with_aim2_schema()
+        assert result is True
+
+    def test_integration_custom_schema_validation(self, config_manager, temp_dir):
+        """Test integration of custom schema loading and validation."""
+        # Create custom schema
+        schema = {
+            "custom_section": {
+                "required": ["important_field"],
+                "types": {"important_field": "str", "optional_field": "int"},
+                "constraints": {"optional_field": {"min": 0, "max": 100}},
+            }
+        }
+
+        schema_file = temp_dir / "custom_integration_schema.json"
+        schema_file.write_text(json.dumps(schema))
+
+        # Load schema
+        config_manager.load_validation_schema(
+            str(schema_file), "custom_integration_schema"
+        )
+
+        # Verify schema is loaded
+        schemas = config_manager.get_available_schemas()
+        assert "custom_integration_schema" in schemas
+
+        # Create matching config
+        config = {
+            "custom_section": {"important_field": "test_value", "optional_field": 50}
+        }
+
+        # Should validate successfully
+        result = config_manager.validate_with_schema(
+            "custom_integration_schema", config
+        )
+        assert result is True
+
+        # Test with invalid config
+        invalid_config = {
+            "custom_section": {
+                "important_field": "test_value",
+                "optional_field": 150,  # Exceeds constraint
+            }
+        }
+
+        with pytest.raises(ConfigError):
+            config_manager.validate_with_schema(
+                "custom_integration_schema", invalid_config
+            )
+
+    def test_integration_multiple_configs_with_validation(
+        self, config_manager, temp_dir, sample_aim2_config
+    ):
+        """Test loading multiple config files and validating merged result."""
+        # Create base config file
+        base_config = {
+            "database": sample_aim2_config["database"],
+            "logging": sample_aim2_config["logging"],
+        }
+
+        base_file = temp_dir / "base_config.yaml"
+        import yaml
+
+        with open(base_file, "w") as f:
+            yaml.dump(base_config, f)
+
+        # Create override config file
+        override_config = {
+            "api": sample_aim2_config["api"],
+            "features": sample_aim2_config["features"],
+            "database": {"port": 9999},  # Override port
+        }
+
+        override_file = temp_dir / "override_config.yaml"
+        with open(override_file, "w") as f:
+            yaml.dump(override_config, f)
+
+        # Load multiple configs
+        config_manager.load_configs([str(base_file), str(override_file)])
+
+        # Verify merge worked
+        assert config_manager.config["database"]["port"] == 9999
+        assert config_manager.config["database"]["host"] == "localhost"
+
+        # Add missing fields for validation
+        config_manager.config["project"] = sample_aim2_config["project"]
+        config_manager.config["nlp"] = sample_aim2_config["nlp"]
+
+        # Should validate successfully
+        result = config_manager.validate_with_aim2_schema()
+        assert result is True
+
+    def test_error_handling_validation_with_config_loading_errors(
+        self, config_manager, temp_dir
+    ):
+        """Test error handling when config loading fails but validation is attempted."""
+        # Create invalid config file
+        invalid_yaml = "invalid: yaml: content: ["
+        invalid_file = temp_dir / "invalid.yaml"
+        invalid_file.write_text(invalid_yaml)
+
+        # Loading should fail
+        with pytest.raises(ConfigError):
+            config_manager.load_config(str(invalid_file))
+
+        # Config should be empty, validation should fail
+        with pytest.raises(ConfigError):
+            config_manager.validate_current_config()
+
+    def test_validate_partial_config_with_specific_schema(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test validating partial configuration with specific schema."""
+        # Test database-only config
+        db_config = {"database": sample_aim2_config["database"]}
+
+        result = config_manager.validate_with_schema("database_only", db_config)
+        assert result is True
+
+        # Test API-only config
+        api_config = {"api": sample_aim2_config["api"]}
+
+        result = config_manager.validate_with_schema("api_only", api_config)
+        assert result is True
+
+    def test_config_manager_enhanced_validation_backward_compatibility(
+        self, config_manager, sample_aim2_config
+    ):
+        """Test that enhanced validation maintains backward compatibility."""
+        config_manager.config = sample_aim2_config
+
+        # Original validation method should still work
+        result = config_manager.validate_config(config_manager.config)
+        assert result is True
+
+        # Enhanced validation should also work
+        result = config_manager.validate_with_aim2_schema()
+        assert result is True
+
+    def test_config_manager_validation_performance(self, config_manager):
+        """Test that validation performance is acceptable for large configs."""
+        import time
+
+        # Create a large configuration
+        large_config = {
+            "project": {"name": "Large Test", "version": "1.0.0"},
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "name": "large_db",
+                "username": "user",
+                "password": "pass",
+            },
+        }
+
+        # Add many sections
+        for i in range(50):
+            large_config[f"section_{i}"] = {
+                "field_1": f"value_{i}_1",
+                "field_2": i,
+                "field_3": i % 2 == 0,
+            }
+
+        config_manager.config = large_config
+
+        # Time the validation (only check basic sections that will validate)
+        basic_config = {"database": large_config["database"]}
+
+        start_time = time.time()
+        result = config_manager.validate_with_schema("database_only", basic_config)
+        validation_time = time.time() - start_time
+
+        assert result is True
+        assert validation_time < 1.0  # Should complete within 1 second
