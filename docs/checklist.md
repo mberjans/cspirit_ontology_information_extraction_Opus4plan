@@ -8,7 +8,7 @@
 - [x] **AIM2-001-02** Initialize git with main branch
 - [x] **AIM2-001-03** Create folder structure as per design
 - [x] **AIM2-001-04** Add .gitignore for Python projects
-- [ ] **AIM2-001-05** Create empty __init__.py files in all packages
+- [x] **AIM2-001-05** Create empty __init__.py files in all packages
 - [ ] **AIM2-001-06** Write initial README.md with project overview
 - [ ] **AIM2-001-07** Add LICENSE file (MIT or chosen license)
 - [ ] **AIM2-001-08** Create CONTRIBUTING.md guidelines
