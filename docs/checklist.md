@@ -37,8 +37,8 @@
 - [x] **AIM2-003-10** Create default_config.yaml template
 - [x] **AIM2-003-11** Write config documentation
 - [x] **AIM2-003-12** Run all config unit tests
-- [ ] **AIM2-004-01** Write unit tests for logger configuration
-- [ ] **AIM2-004-02** Write unit tests for log formatters
+- [x] **AIM2-004-01** Write unit tests for logger configuration
+- [x] **AIM2-004-02** Write unit tests for log formatters
 - [ ] **AIM2-004-03** Create LoggerFactory class
 - [ ] **AIM2-004-04** Implement console handler with colors
 - [ ] **AIM2-004-05** Implement rotating file handler

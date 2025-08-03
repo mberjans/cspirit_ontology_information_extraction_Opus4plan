@@ -24,7 +24,7 @@ Dependencies:
 import os
 import re
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 
@@ -70,7 +70,7 @@ class LoggerConfig:
         "handlers": ["console"],
         "file_path": None,
         "max_file_size": "10MB",
-        "backup_count": 3
+        "backup_count": 3,
     }
 
     # Valid logging levels
@@ -85,7 +85,7 @@ class LoggerConfig:
         "KB": 1024,
         "MB": 1024 * 1024,
         "GB": 1024 * 1024 * 1024,
-        "TB": 1024 * 1024 * 1024 * 1024
+        "TB": 1024 * 1024 * 1024 * 1024,
     }
 
     def __init__(self, env_prefix: str = "AIM2"):
@@ -114,23 +114,25 @@ class LoggerConfig:
         try:
             # Extract logging configuration from nested structure if needed
             logging_config = config_dict.get("logging", config_dict)
-            
+
             # Validate the configuration
             self.validate_config(logging_config)
-            
+
             # Merge with defaults
             self.config = self._merge_configs(self.DEFAULT_CONFIG, logging_config)
-            
+
             # Apply environment variable overrides
             self._apply_env_overrides()
-            
+
             # Parse size formats
             self._parse_size_formats()
-            
+
         except Exception as e:
             if isinstance(e, LoggerConfigError):
                 raise
-            raise LoggerConfigError(f"Failed to load configuration from dict: {str(e)}", e)
+            raise LoggerConfigError(
+                f"Failed to load configuration from dict: {str(e)}", e
+            )
 
     def load_from_config_manager(self, config_manager) -> None:
         """
@@ -148,7 +150,9 @@ class LoggerConfig:
         except Exception as e:
             if isinstance(e, LoggerConfigError):
                 raise
-            raise LoggerConfigError(f"Failed to load configuration from ConfigManager: {str(e)}", e)
+            raise LoggerConfigError(
+                f"Failed to load configuration from ConfigManager: {str(e)}", e
+            )
 
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """
@@ -173,7 +177,9 @@ class LoggerConfig:
         if not isinstance(level, str):
             errors.append("Logging level must be a string")
         elif level.upper() not in self.VALID_LEVELS:
-            errors.append(f"Invalid logging level '{level}'. Must be one of: {', '.join(self.VALID_LEVELS)}")
+            errors.append(
+                f"Invalid logging level '{level}'. Must be one of: {', '.join(self.VALID_LEVELS)}"
+            )
 
         # Validate format
         format_str = config.get("format", self.DEFAULT_CONFIG["format"])
@@ -191,7 +197,9 @@ class LoggerConfig:
                 if not isinstance(handler, str):
                     errors.append(f"Handler '{handler}' must be a string")
                 elif handler not in self.VALID_HANDLERS:
-                    errors.append(f"Invalid handler '{handler}'. Must be one of: {', '.join(self.VALID_HANDLERS)}")
+                    errors.append(
+                        f"Invalid handler '{handler}'. Must be one of: {', '.join(self.VALID_HANDLERS)}"
+                    )
 
         # Validate file_path (if provided)
         file_path = config.get("file_path")
@@ -212,7 +220,9 @@ class LoggerConfig:
                     errors.append(f"Invalid file path '{file_path}': {str(e)}")
 
         # Validate max_file_size
-        max_file_size = config.get("max_file_size", self.DEFAULT_CONFIG["max_file_size"])
+        max_file_size = config.get(
+            "max_file_size", self.DEFAULT_CONFIG["max_file_size"]
+        )
         if isinstance(max_file_size, str):
             try:
                 self._parse_size_string(max_file_size)
@@ -222,7 +232,9 @@ class LoggerConfig:
             if max_file_size < 1024:
                 errors.append("max_file_size must be at least 1024 bytes")
         else:
-            errors.append("max_file_size must be a string (e.g., '10MB') or integer (bytes)")
+            errors.append(
+                "max_file_size must be a string (e.g., '10MB') or integer (bytes)"
+            )
 
         # Validate backup_count
         backup_count = config.get("backup_count", self.DEFAULT_CONFIG["backup_count"])
@@ -239,7 +251,9 @@ class LoggerConfig:
                 errors.append("file_path must be specified when using file handler")
 
         if errors:
-            error_msg = "Logging configuration validation failed:\n" + "\n".join(f"  - {err}" for err in errors)
+            error_msg = "Logging configuration validation failed:\n" + "\n".join(
+                f"  - {err}" for err in errors
+            )
             raise LoggerConfigError(error_msg)
 
         return True
@@ -326,7 +340,9 @@ class LoggerConfig:
         Returns:
             bool: True if file handler is enabled
         """
-        return "file" in self.config["handlers"] and self.config["file_path"] is not None
+        return (
+            "file" in self.config["handlers"] and self.config["file_path"] is not None
+        )
 
     def update_config(self, updates: Dict[str, Any]) -> None:
         """
@@ -341,10 +357,10 @@ class LoggerConfig:
         # Create a temporary config with updates applied
         temp_config = self.config.copy()
         temp_config.update(updates)
-        
+
         # Validate the updated configuration
         self.validate_config(temp_config)
-        
+
         # Apply the updates
         self.config.update(updates)
         self._parse_size_formats()
@@ -360,7 +376,9 @@ class LoggerConfig:
             LoggerConfigError: If level is invalid
         """
         if level.upper() not in self.VALID_LEVELS:
-            raise LoggerConfigError(f"Invalid logging level '{level}'. Must be one of: {', '.join(self.VALID_LEVELS)}")
+            raise LoggerConfigError(
+                f"Invalid logging level '{level}'. Must be one of: {', '.join(self.VALID_LEVELS)}"
+            )
         self.config["level"] = level.upper()
 
     def set_file_path(self, file_path: Optional[str]) -> None:
@@ -376,7 +394,7 @@ class LoggerConfig:
         if file_path is not None:
             if not isinstance(file_path, str) or not file_path.strip():
                 raise LoggerConfigError("File path must be a non-empty string or None")
-            
+
             # Validate path
             try:
                 path = Path(file_path)
@@ -385,7 +403,7 @@ class LoggerConfig:
                     parent_dir.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 raise LoggerConfigError(f"Invalid file path '{file_path}': {str(e)}", e)
-        
+
         self.config["file_path"] = file_path
 
     def add_handler(self, handler: str) -> None:
@@ -399,8 +417,10 @@ class LoggerConfig:
             LoggerConfigError: If handler is invalid or already exists
         """
         if handler not in self.VALID_HANDLERS:
-            raise LoggerConfigError(f"Invalid handler '{handler}'. Must be one of: {', '.join(self.VALID_HANDLERS)}")
-        
+            raise LoggerConfigError(
+                f"Invalid handler '{handler}'. Must be one of: {', '.join(self.VALID_HANDLERS)}"
+            )
+
         if handler not in self.config["handlers"]:
             self.config["handlers"].append(handler)
 
@@ -429,7 +449,9 @@ class LoggerConfig:
 
     # Private helper methods
 
-    def _merge_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge_configs(
+        self, base: Dict[str, Any], override: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Merge two configuration dictionaries.
 
@@ -442,7 +464,11 @@ class LoggerConfig:
         """
         merged = base.copy()
         for key, value in override.items():
-            if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            if (
+                key in merged
+                and isinstance(merged[key], dict)
+                and isinstance(value, dict)
+            ):
                 merged[key] = self._merge_configs(merged[key], value)
             else:
                 merged[key] = value
@@ -451,32 +477,38 @@ class LoggerConfig:
     def _apply_env_overrides(self) -> None:
         """Apply environment variable overrides to logging configuration."""
         env_prefix = f"{self.env_prefix}_LOGGING_"
-        
+
         # Map environment variable suffixes to config keys
         env_mappings = {
             "LEVEL": "level",
             "FORMAT": "format",
             "FILE_PATH": "file_path",
             "MAX_FILE_SIZE": "max_file_size",
-            "BACKUP_COUNT": "backup_count"
+            "BACKUP_COUNT": "backup_count",
         }
-        
+
         for env_suffix, config_key in env_mappings.items():
             env_key = f"{env_prefix}{env_suffix}"
             if env_key in os.environ:
                 env_value = os.environ[env_key]
-                
+
                 # Convert value to appropriate type
                 if config_key in ["backup_count"]:
                     try:
                         self.config[config_key] = int(env_value)
                     except ValueError:
-                        raise LoggerConfigError(f"Invalid integer value for {env_key}: {env_value}")
-                elif config_key == "file_path" and env_value.lower() in ["null", "none", ""]:
+                        raise LoggerConfigError(
+                            f"Invalid integer value for {env_key}: {env_value}"
+                        )
+                elif config_key == "file_path" and env_value.lower() in [
+                    "null",
+                    "none",
+                    "",
+                ]:
                     self.config[config_key] = None
                 else:
                     self.config[config_key] = env_value
-        
+
         # Handle handlers (comma-separated list)
         handlers_env = f"{env_prefix}HANDLERS"
         if handlers_env in os.environ:
@@ -510,39 +542,43 @@ class LoggerConfig:
         """
         if not isinstance(size_str, str):
             raise ValueError("Size must be a string")
-        
+
         size_str = size_str.strip().upper()
-        
+
         # Pattern to match number + optional unit
-        pattern = r'^(\d+(?:\.\d+)?)\s*([A-Z]*B?)$'
+        pattern = r"^(\d+(?:\.\d+)?)\s*([A-Z]*B?)$"
         match = re.match(pattern, size_str)
-        
+
         if not match:
-            raise ValueError(f"Invalid size format: {size_str}. Expected format like '10MB', '1.5GB', or '1024'")
-        
+            raise ValueError(
+                f"Invalid size format: {size_str}. Expected format like '10MB', '1.5GB', or '1024'"
+            )
+
         number_str, unit = match.groups()
-        
+
         try:
             number = float(number_str)
         except ValueError:
             raise ValueError(f"Invalid number in size string: {number_str}")
-        
+
         if number <= 0:
             raise ValueError("Size must be positive")
-        
+
         # Default to bytes if no unit specified
         if not unit or unit == "B":
             multiplier = 1
         else:
             if unit not in self.SIZE_UNITS:
                 valid_units = ", ".join(self.SIZE_UNITS.keys())
-                raise ValueError(f"Invalid size unit: {unit}. Valid units are: {valid_units}")
+                raise ValueError(
+                    f"Invalid size unit: {unit}. Valid units are: {valid_units}"
+                )
             multiplier = self.SIZE_UNITS[unit]
-        
+
         result = int(number * multiplier)
-        
+
         # Minimum size check
         if result < 1024:
             raise ValueError("Minimum file size is 1024 bytes (1KB)")
-        
+
         return result

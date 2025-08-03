@@ -27,7 +27,7 @@ import logging.handlers
 import threading
 import atexit
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from .logger_config import LoggerConfig, LoggerConfigError
 
 
@@ -118,10 +118,16 @@ class LoggerManager:
 
             except Exception as e:
                 if isinstance(e, (LoggerConfigError, LoggerManagerError)):
-                    raise LoggerManagerError(f"Failed to initialize logger manager: {str(e)}", e)
-                raise LoggerManagerError(f"Unexpected error during initialization: {str(e)}", e)
+                    raise LoggerManagerError(
+                        f"Failed to initialize logger manager: {str(e)}", e
+                    )
+                raise LoggerManagerError(
+                    f"Unexpected error during initialization: {str(e)}", e
+                )
 
-    def get_logger(self, name: Optional[str] = None, module_name: Optional[str] = None) -> logging.Logger:
+    def get_logger(
+        self, name: Optional[str] = None, module_name: Optional[str] = None
+    ) -> logging.Logger:
         """
         Get or create a logger with the specified name.
 
@@ -157,10 +163,10 @@ class LoggerManager:
 
                 # Create new logger
                 logger = logging.getLogger(logger_name)
-                
+
                 # Configure logger level and propagation
                 logger.setLevel(self.config.get_level_int())
-                
+
                 # For non-root loggers, enable propagation to root
                 if logger_name != self.ROOT_LOGGER_NAME:
                     logger.propagate = True
@@ -173,7 +179,9 @@ class LoggerManager:
                 return logger
 
             except Exception as e:
-                raise LoggerManagerError(f"Failed to create logger '{name or module_name}': {str(e)}", e)
+                raise LoggerManagerError(
+                    f"Failed to create logger '{name or module_name}': {str(e)}", e
+                )
 
     def get_module_logger(self, module_name: str) -> logging.Logger:
         """
@@ -237,8 +245,12 @@ class LoggerManager:
 
             except Exception as e:
                 if isinstance(e, (LoggerConfigError, LoggerManagerError)):
-                    raise LoggerManagerError(f"Failed to reload configuration: {str(e)}", e)
-                raise LoggerManagerError(f"Unexpected error during configuration reload: {str(e)}", e)
+                    raise LoggerManagerError(
+                        f"Failed to reload configuration: {str(e)}", e
+                    )
+                raise LoggerManagerError(
+                    f"Unexpected error during configuration reload: {str(e)}", e
+                )
 
     def set_level(self, level: str) -> None:
         """
@@ -283,14 +295,16 @@ class LoggerManager:
 
                 logger = self.loggers[logger_name]
                 handler = self._create_handler(handler_type)
-                
+
                 if handler:
                     logger.addHandler(handler)
 
             except Exception as e:
                 if isinstance(e, LoggerManagerError):
                     raise
-                raise LoggerManagerError(f"Failed to add handler to logger: {str(e)}", e)
+                raise LoggerManagerError(
+                    f"Failed to add handler to logger: {str(e)}", e
+                )
 
     def remove_handler_from_logger(self, logger_name: str, handler_type: str) -> None:
         """
@@ -309,14 +323,19 @@ class LoggerManager:
                     raise LoggerManagerError(f"Logger '{logger_name}' not found")
 
                 logger = self.loggers[logger_name]
-                
+
                 # Find and remove handler of specified type
                 handlers_to_remove = []
                 for handler in logger.handlers:
-                    if (handler_type == "console" and isinstance(handler, logging.StreamHandler) 
-                        and not isinstance(handler, logging.FileHandler)):
+                    if (
+                        handler_type == "console"
+                        and isinstance(handler, logging.StreamHandler)
+                        and not isinstance(handler, logging.FileHandler)
+                    ):
                         handlers_to_remove.append(handler)
-                    elif (handler_type == "file" and isinstance(handler, logging.FileHandler)):
+                    elif handler_type == "file" and isinstance(
+                        handler, logging.FileHandler
+                    ):
                         handlers_to_remove.append(handler)
 
                 for handler in handlers_to_remove:
@@ -326,7 +345,9 @@ class LoggerManager:
             except Exception as e:
                 if isinstance(e, LoggerManagerError):
                     raise
-                raise LoggerManagerError(f"Failed to remove handler from logger: {str(e)}", e)
+                raise LoggerManagerError(
+                    f"Failed to remove handler from logger: {str(e)}", e
+                )
 
     def get_logger_info(self) -> Dict[str, Any]:
         """
@@ -340,14 +361,14 @@ class LoggerManager:
                 "configuration": self.config.to_dict(),
                 "loggers": {},
                 "handlers": list(self.handlers.keys()),
-                "initialized": self._initialized
+                "initialized": self._initialized,
             }
 
             for name, logger in self.loggers.items():
                 info["loggers"][name] = {
                     "level": logging.getLevelName(logger.level),
                     "handlers": [type(h).__name__ for h in logger.handlers],
-                    "propagate": logger.propagate
+                    "propagate": logger.propagate,
                 }
 
             return info
@@ -406,7 +427,7 @@ class LoggerManager:
         try:
             # Get or create root logger
             self.root_logger = logging.getLogger(self.ROOT_LOGGER_NAME)
-            
+
             # Clear existing handlers
             for handler in self.root_logger.handlers[:]:
                 self.root_logger.removeHandler(handler)
@@ -461,7 +482,7 @@ class LoggerManager:
                 # Set formatter
                 formatter = logging.Formatter(self.config.get_format())
                 handler.setFormatter(formatter)
-                
+
                 # Cache the handler
                 self.handlers[handler_key] = handler
 
@@ -470,7 +491,9 @@ class LoggerManager:
         except Exception as e:
             if isinstance(e, LoggerManagerError):
                 raise
-            raise LoggerManagerError(f"Failed to create {handler_type} handler: {str(e)}", e)
+            raise LoggerManagerError(
+                f"Failed to create {handler_type} handler: {str(e)}", e
+            )
 
     def _create_console_handler(self) -> logging.StreamHandler:
         """Create a console handler."""
@@ -495,13 +518,15 @@ class LoggerManager:
                 filename=file_path,
                 maxBytes=max_bytes,
                 backupCount=backup_count,
-                encoding='utf-8'
+                encoding="utf-8",
             )
 
             return handler
 
         except Exception as e:
-            raise LoggerManagerError(f"Failed to create file handler for {file_path}: {str(e)}", e)
+            raise LoggerManagerError(
+                f"Failed to create file handler for {file_path}: {str(e)}", e
+            )
 
     def _cleanup_handlers(self) -> None:
         """Clean up all managed handlers."""

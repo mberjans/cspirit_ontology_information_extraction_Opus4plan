@@ -996,78 +996,90 @@ class ConfigValidator:
 
     def _setup_built_in_validators(self) -> None:
         """Set up built-in custom validators for common configuration patterns."""
-        
+
         def validate_logging_handlers(handlers: List[str]) -> bool:
             """Validate logging handlers configuration."""
             if not isinstance(handlers, list):
                 raise ValueError("Handlers must be a list")
-            
+
             valid_handlers = ["console", "file"]
             for handler in handlers:
                 if not isinstance(handler, str):
                     raise ValueError(f"Handler '{handler}' must be a string")
                 if handler not in valid_handlers:
-                    raise ValueError(f"Invalid handler '{handler}'. Must be one of: {', '.join(valid_handlers)}")
-            
+                    raise ValueError(
+                        f"Invalid handler '{handler}'. Must be one of: {', '.join(valid_handlers)}"
+                    )
+
             return True
 
         def validate_file_size_format(size_value: Any) -> bool:
             """Validate file size format (e.g., '10MB' or integer bytes)."""
             import re
-            
+
             if isinstance(size_value, int):
                 if size_value < 1024:
                     raise ValueError("File size must be at least 1024 bytes")
                 return True
-            
+
             if isinstance(size_value, str):
                 size_str = size_value.strip().upper()
-                pattern = r'^(\d+(?:\.\d+)?)\s*([A-Z]*B?)$'
+                pattern = r"^(\d+(?:\.\d+)?)\s*([A-Z]*B?)$"
                 match = re.match(pattern, size_str)
-                
+
                 if not match:
-                    raise ValueError(f"Invalid size format: {size_value}. Expected format like '10MB', '1.5GB', or integer bytes")
-                
+                    raise ValueError(
+                        f"Invalid size format: {size_value}. Expected format like '10MB', '1.5GB', or integer bytes"
+                    )
+
                 number_str, unit = match.groups()
-                
+
                 try:
                     number = float(number_str)
                 except ValueError:
                     raise ValueError(f"Invalid number in size string: {number_str}")
-                
+
                 if number <= 0:
                     raise ValueError("Size must be positive")
-                
+
                 # Valid units
-                size_units = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-                
+                size_units = {
+                    "B": 1,
+                    "KB": 1024,
+                    "MB": 1024**2,
+                    "GB": 1024**3,
+                    "TB": 1024**4,
+                }
+
                 if not unit or unit == "B":
                     multiplier = 1
                 else:
                     if unit not in size_units:
                         valid_units = ", ".join(size_units.keys())
-                        raise ValueError(f"Invalid size unit: {unit}. Valid units are: {valid_units}")
+                        raise ValueError(
+                            f"Invalid size unit: {unit}. Valid units are: {valid_units}"
+                        )
                     multiplier = size_units[unit]
-                
+
                 result = int(number * multiplier)
                 if result < 1024:
                     raise ValueError("Minimum file size is 1024 bytes (1KB)")
-                
+
                 return True
-            
+
             raise ValueError("Size must be a string (e.g., '10MB') or integer (bytes)")
 
         # Register built-in validators
         self.add_validation_rule(
-            "validate_logging_handlers", 
+            "validate_logging_handlers",
             validate_logging_handlers,
-            "Validate logging handlers configuration"
+            "Validate logging handlers configuration",
         )
-        
+
         self.add_validation_rule(
             "validate_file_size_format",
             validate_file_size_format,
-            "Validate file size format (e.g., '10MB' or integer bytes)"
+            "Validate file size format (e.g., '10MB' or integer bytes)",
         )
 
     # Private helper methods

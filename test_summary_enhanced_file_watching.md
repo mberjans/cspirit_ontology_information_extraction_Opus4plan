@@ -112,13 +112,13 @@ Comprehensive unit tests have been implemented for the enhanced config file watc
 ```python
 def test_feature(self, config_manager, temp_dir, sample_yaml_config):
     # Setup test files
-    yaml_file = temp_dir / "config.yaml" 
+    yaml_file = temp_dir / "config.yaml"
     yaml_file.write_text(sample_yaml_config)
-    
+
     # Test functionality
     config_manager.enable_watch_mode(str(yaml_file))
     assert config_manager.is_watching()
-    
+
     # Cleanup
     config_manager.disable_watch_mode()
 ```
