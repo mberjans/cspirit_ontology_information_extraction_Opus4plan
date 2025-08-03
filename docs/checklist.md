@@ -49,7 +49,7 @@
 - [x] **AIM2-004-10** Add performance logging decorators
 - [x] **AIM2-004-11** Test log rotation functionality
 - [x] **AIM2-004-12** Run all logging unit tests
-- [ ] **AIM2-005-01** Write unit tests for exception hierarchy
+- [x] **AIM2-005-01** Write unit tests for exception hierarchy
 - [ ] **AIM2-005-02** Create AIM2Exception base class
 - [ ] **AIM2-005-03** Add error code system design
 - [ ] **AIM2-005-04** Create OntologyException subclass
