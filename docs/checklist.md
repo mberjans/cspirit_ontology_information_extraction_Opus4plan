@@ -65,8 +65,8 @@
 - [x] **AIM2-011-03** Write unit tests for Ontology class
 - [x] **AIM2-011-04** Create Term dataclass with attributes
 - [x] **AIM2-011-05** Add term validation methods
-- [ ] **AIM2-011-06** Create Relationship dataclass
-- [ ] **AIM2-011-07** Implement relationship validation
+- [x] **AIM2-011-06** Create Relationship dataclass
+- [x] **AIM2-011-07** Implement relationship validation
 - [ ] **AIM2-011-08** Create Ontology container class
 - [ ] **AIM2-011-09** Add term indexing functionality
 - [ ] **AIM2-011-10** Implement serialization to JSON
