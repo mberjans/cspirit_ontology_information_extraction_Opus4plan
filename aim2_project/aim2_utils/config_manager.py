@@ -256,6 +256,9 @@ class ConfigManager:
 
         # Enhanced validation
         self._validator = None
+        
+        # Logging framework integration
+        self._logger_manager = None
 
     @property
     def validator(self):
@@ -265,6 +268,13 @@ class ConfigManager:
 
             self._validator = ConfigValidator()
         return self._validator
+
+    @property
+    def logger_manager(self):
+        """Get or create the LoggerManager instance."""
+        if self._logger_manager is None:
+            self._initialize_logger_manager()
+        return self._logger_manager
 
     def load_config(self, config_path: str) -> None:
         """
@@ -633,6 +643,136 @@ class ConfigManager:
         return self.validate_with_schema(
             schema_name, config=None, strict=strict, return_report=return_report
         )
+
+    def setup_logging(self) -> None:
+        """
+        Set up logging using the configuration loaded in this manager.
+        
+        This method initializes the LoggerManager with the current logging
+        configuration and sets up all configured handlers.
+        
+        Raises:
+            ConfigError: If logging setup fails
+        """
+        try:
+            if "logging" not in self.config:
+                raise ConfigError("No logging configuration found")
+            
+            # Initialize logger manager with current configuration
+            self._initialize_logger_manager()
+            
+        except Exception as e:
+            if isinstance(e, ConfigError):
+                raise
+            raise ConfigError(f"Failed to setup logging: {str(e)}", e)
+
+    def get_logger(self, name: Optional[str] = None, module_name: Optional[str] = None):
+        """
+        Get a logger instance using the configured LoggerManager.
+        
+        Args:
+            name (Optional[str]): Logger name. If None, uses module_name or root name.
+            module_name (Optional[str]): Module name for hierarchical naming.
+        
+        Returns:
+            logging.Logger: Configured logger instance
+            
+        Raises:
+            ConfigError: If logger creation fails
+        """
+        try:
+            return self.logger_manager.get_logger(name=name, module_name=module_name)
+        except Exception as e:
+            raise ConfigError(f"Failed to get logger: {str(e)}", e)
+
+    def get_module_logger(self, module_name: str):
+        """
+        Get a logger for a specific module.
+        
+        Args:
+            module_name (str): Name of the module
+        
+        Returns:
+            logging.Logger: Module-specific logger
+            
+        Raises:
+            ConfigError: If logger creation fails
+        """
+        try:
+            return self.logger_manager.get_module_logger(module_name)
+        except Exception as e:
+            raise ConfigError(f"Failed to get module logger: {str(e)}", e)
+
+    def reload_logging_config(self) -> None:
+        """
+        Reload the logging configuration.
+        
+        This method updates the LoggerManager with the current logging
+        configuration from this ConfigManager.
+        
+        Raises:
+            ConfigError: If logging configuration reload fails
+        """
+        try:
+            if self._logger_manager is not None:
+                # Create new logger config from current configuration
+                from .logger_config import LoggerConfig
+                
+                logger_config = LoggerConfig(env_prefix=self.env_prefix)
+                logger_config.load_from_config_manager(self)
+                
+                # Reload the logger manager configuration
+                self._logger_manager.reload_configuration(logger_config)
+            else:
+                # Initialize for the first time
+                self._initialize_logger_manager()
+                
+        except Exception as e:
+            if isinstance(e, ConfigError):
+                raise
+            raise ConfigError(f"Failed to reload logging configuration: {str(e)}", e)
+
+    def get_logging_info(self) -> Dict[str, Any]:
+        """
+        Get information about the current logging configuration and state.
+        
+        Returns:
+            Dict[str, Any]: Dictionary containing logging information
+        """
+        info = {
+            "config": self.get("logging", {}),
+            "manager_initialized": self._logger_manager is not None
+        }
+        
+        if self._logger_manager is not None:
+            try:
+                info.update(self._logger_manager.get_logger_info())
+            except Exception as e:
+                info["manager_error"] = str(e)
+        
+        return info
+
+    def validate_logging_config(self) -> bool:
+        """
+        Validate the current logging configuration.
+        
+        Returns:
+            bool: True if logging configuration is valid
+            
+        Raises:
+            ConfigError: If logging configuration is invalid
+        """
+        try:
+            from .logger_config import LoggerConfig
+            
+            logging_config_dict = {"logging": self.get("logging", {})}
+            logger_config = LoggerConfig(env_prefix=self.env_prefix)
+            logger_config.load_from_dict(logging_config_dict)
+            
+            return True
+            
+        except Exception as e:
+            raise ConfigError(f"Logging configuration validation failed: {str(e)}", e)
 
     def merge_configs(
         self, base_config: Dict[str, Any], override_config: Dict[str, Any]
@@ -1130,6 +1270,23 @@ class ConfigManager:
             # Remove the encryption prefix for testing
             return encrypted_value.replace("encrypted:AES256:", "decrypted_")
         return encrypted_value
+
+    def _initialize_logger_manager(self) -> None:
+        """Initialize the LoggerManager with current configuration."""
+        try:
+            from .logger_config import LoggerConfig
+            from .logger_manager import LoggerManager
+            
+            # Create logger config from current configuration
+            logger_config = LoggerConfig(env_prefix=self.env_prefix)
+            logger_config.load_from_config_manager(self)
+            
+            # Create and initialize logger manager
+            self._logger_manager = LoggerManager(logger_config)
+            self._logger_manager.initialize()
+            
+        except Exception as e:
+            raise ConfigError(f"Failed to initialize logger manager: {str(e)}", e)
 
     # Private helper methods
 
