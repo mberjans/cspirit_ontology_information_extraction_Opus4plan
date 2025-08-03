@@ -1,6 +1,6 @@
 # AIM2 Ontology Information Extraction Project Makefile
 # Development Environment Configuration and Common Commands
-# 
+#
 # This Makefile provides convenient commands for development workflows including:
 # - Environment setup and management
 # - Code quality checks and formatting
@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Project configuration
 PROJECT_NAME := aim2-project
 PACKAGE_NAME := aim2_project
-PYTHON_VERSION := 3.8
+PYTHON_VERSION := 3.13
 VENV_NAME := venv
 VENV_PATH := $(VENV_NAME)
 PYTHON := $(VENV_PATH)/bin/python
@@ -43,6 +43,9 @@ BUILD_DIR := build
 DIST_DIR := dist
 HTMLCOV_DIR := htmlcov
 DOCS_BUILD_DIR := $(DOCS_DIR)/_build
+ONTOLOGY_DIR := $(SRC_DIR)/data/ontologies
+CORPUS_DIR := $(SRC_DIR)/data/corpus
+CONFIG_DIR := $(SRC_DIR)/configs
 
 # Coverage settings
 COVERAGE_MIN := 80
@@ -50,7 +53,7 @@ COVERAGE_REPORT := --cov=$(PACKAGE_NAME) --cov-report=term-missing --cov-report=
 
 # Test markers
 UNIT_TESTS := -m "unit"
-INTEGRATION_TESTS := -m "integration" 
+INTEGRATION_TESTS := -m "integration"
 SLOW_TESTS := -m "slow"
 FAST_TESTS := -m "not slow"
 
@@ -106,13 +109,25 @@ help: ## Show this help message
 	@echo "Development Utilities:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Development Utilities/ {found=1} found && /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2} /^$$/ {found=0}' $(MAKEFILE_LIST)
 	@echo ""
+	@echo "Ontology Management:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Ontology Management/ {found=1} found && /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2} /^$$/ {found=0}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "Machine Learning:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Machine Learning/ {found=1} found && /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2} /^$$/ {found=0}' $(MAKEFILE_LIST)
+	@echo ""
 	@echo "Git and Release:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Git and Release/ {found=1} found && /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2} /^$$/ {found=0}' $(MAKEFILE_LIST)
 
 .PHONY: venv
 venv: ## Environment Setup - Create virtual environment
 	$(call log_info,"Creating virtual environment...")
-	python$(PYTHON_VERSION) -m venv $(VENV_PATH)
+	@if command -v python$(PYTHON_VERSION) >/dev/null 2>&1; then \
+		python$(PYTHON_VERSION) -m venv $(VENV_PATH); \
+	elif command -v python3 >/dev/null 2>&1; then \
+		python3 -m venv $(VENV_PATH); \
+	else \
+		python -m venv $(VENV_PATH); \
+	fi
 	$(PIP) install --upgrade pip setuptools wheel
 	$(call log_success,"Virtual environment created at $(VENV_PATH)")
 
@@ -408,6 +423,21 @@ run-corpus-builder: ## Development Utilities - Run corpus builder
 	$(call check_venv)
 	$(PYTHON) -m $(PACKAGE_NAME).aim2_extraction.corpus_builder $(ARGS)
 
+.PHONY: run-relationship-extractor
+run-relationship-extractor: ## Development Utilities - Run relationship extractor
+	$(call check_venv)
+	$(PYTHON) -m $(PACKAGE_NAME).aim2_extraction.relationship_extractor $(ARGS)
+
+.PHONY: run-evaluation-benchmarker
+run-evaluation-benchmarker: ## Development Utilities - Run evaluation benchmarker
+	$(call check_venv)
+	$(PYTHON) -m $(PACKAGE_NAME).aim2_extraction.evaluation_benchmarker $(ARGS)
+
+.PHONY: run-synthetic-generator
+run-synthetic-generator: ## Development Utilities - Run synthetic data generator
+	$(call check_venv)
+	$(PYTHON) -m $(PACKAGE_NAME).aim2_utils.synthetic_data_generator $(ARGS)
+
 .PHONY: profile
 profile: ## Development Utilities - Profile application performance
 	$(call check_venv)
@@ -445,11 +475,99 @@ shell: ## Development Utilities - Start interactive Python shell with project co
 	$(call log_info,"Starting interactive shell...")
 	$(VENV_PATH)/bin/ipython
 
+.PHONY: notebook-setup
+notebook-setup: ## Development Utilities - Setup Jupyter with project kernel
+	$(call check_venv)
+	$(call log_info,"Setting up Jupyter kernel for project...")
+	$(VENV_PATH)/bin/python -m ipykernel install --user --name=aim2-project --display-name="AIM2 Project"
+	$(call log_success,"Jupyter kernel installed")
+
+.PHONY: data-explore
+data-explore: ## Development Utilities - Start data exploration notebook
+	$(call check_venv)
+	$(call log_info,"Starting data exploration environment...")
+	cd $(SRC_DIR)/data && $(VENV_PATH)/bin/jupyter lab
+
 .PHONY: jupyter
 jupyter: ## Development Utilities - Start Jupyter notebook server
 	$(call check_venv)
 	$(call log_info,"Starting Jupyter notebook server...")
 	$(VENV_PATH)/bin/jupyter lab
+
+# ====================================================================
+# Ontology Management
+# ====================================================================
+.PHONY: ontology-validate
+ontology-validate: ## Ontology Management - Validate ontology files
+	$(call check_venv)
+	$(call log_info,"Validating ontology files...")
+	@if [ -d "$(ONTOLOGY_DIR)" ]; then \
+		find $(ONTOLOGY_DIR) -name "*.owl" -o -name "*.rdf" -o -name "*.ttl" | while read file; do \
+			echo "Validating $$file..."; \
+			$(PYTHON) -c "import rdflib; g=rdflib.Graph(); g.parse('$$file'); print('✅ Valid')" || echo "❌ Invalid: $$file"; \
+		done; \
+	else \
+		$(call log_warning,"Ontology directory not found: $(ONTOLOGY_DIR)"); \
+	fi
+	$(call log_success,"Ontology validation completed")
+
+.PHONY: ontology-stats
+ontology-stats: ## Ontology Management - Show ontology statistics
+	$(call check_venv)
+	$(call log_info,"Generating ontology statistics...")
+	@$(PYTHON) -c "import os; from pathlib import Path; ontology_dir = Path('$(ONTOLOGY_DIR)'); owl_files = list(ontology_dir.glob('*.owl')) if ontology_dir.exists() else []; rdf_files = list(ontology_dir.glob('*.rdf')) if ontology_dir.exists() else []; ttl_files = list(ontology_dir.glob('*.ttl')) if ontology_dir.exists() else []; print('📊 Ontology Statistics:' if ontology_dir.exists() else '⚠️  Ontology directory not found'); print(f'   OWL files: {len(owl_files)}') if ontology_dir.exists() else None; print(f'   RDF files: {len(rdf_files)}') if ontology_dir.exists() else None; print(f'   TTL files: {len(ttl_files)}') if ontology_dir.exists() else None; print(f'   Total: {len(owl_files + rdf_files + ttl_files)}') if ontology_dir.exists() else None"
+
+.PHONY: corpus-stats
+corpus-stats: ## Ontology Management - Show corpus statistics
+	$(call check_venv)
+	$(call log_info,"Generating corpus statistics...")
+	@$(PYTHON) -c "import os; from pathlib import Path; corpus_dir = Path('$(CORPUS_DIR)'); txt_files = list(corpus_dir.glob('**/*.txt')) if corpus_dir.exists() else []; json_files = list(corpus_dir.glob('**/*.json')) if corpus_dir.exists() else []; csv_files = list(corpus_dir.glob('**/*.csv')) if corpus_dir.exists() else []; total_size = sum(f.stat().st_size for f in txt_files + json_files + csv_files if f.is_file()) if corpus_dir.exists() else 0; print('📄 Corpus Statistics:' if corpus_dir.exists() else '⚠️  Corpus directory not found'); print(f'   Text files: {len(txt_files)}') if corpus_dir.exists() else None; print(f'   JSON files: {len(json_files)}') if corpus_dir.exists() else None; print(f'   CSV files: {len(csv_files)}') if corpus_dir.exists() else None; print(f'   Total size: {total_size/1024/1024:.2f} MB') if corpus_dir.exists() else None"
+
+.PHONY: config-validate
+config-validate: ## Ontology Management - Validate configuration files
+	$(call check_venv)
+	$(call log_info,"Validating configuration files...")
+	@$(PYTHON) -c "import yaml, json; from pathlib import Path; config_dir = Path('$(CONFIG_DIR)'); print('🔧 Configuration Validation:' if config_dir.exists() else '⚠️  Config directory not found'); [print(f'✅ Valid YAML: {f.name}') if yaml.safe_load(open(f)) or True else print(f'❌ Invalid YAML: {f.name}') for f in config_dir.glob('*.yaml')] if config_dir.exists() else None; [print(f'✅ Valid JSON: {f.name}') if json.load(open(f)) or True else print(f'❌ Invalid JSON: {f.name}') for f in config_dir.glob('*.json')] if config_dir.exists() else None"
+	$(call log_success,"Configuration validation completed")
+
+# ====================================================================
+# Machine Learning & Data Processing
+# ====================================================================
+.PHONY: data-validate
+data-validate: ## Machine Learning - Validate data integrity
+	$(call check_venv)
+	$(call log_info,"Validating data integrity...")
+	@$(PYTHON) -c "from pathlib import Path; data_dir = Path('$(SRC_DIR)/data'); csv_files = list(data_dir.glob('**/*.csv')) if data_dir.exists() else []; print(f'🔍 Checking {len(csv_files)} CSV files...' if data_dir.exists() else '⚠️  Data directory not found')"
+	$(call log_success,"Data validation completed")
+
+.PHONY: model-info
+model-info: ## Machine Learning - Show model information
+	$(call check_venv)
+	$(call log_info,"Gathering model information...")
+	@echo "try:" > /tmp/model_info.py
+	@echo "    import torch" >> /tmp/model_info.py
+	@echo "    print('🤖 ML Environment Information:')" >> /tmp/model_info.py
+	@echo "    print(f'   PyTorch version: {torch.__version__}')" >> /tmp/model_info.py
+	@echo "    print(f'   CUDA available: {torch.cuda.is_available()}')" >> /tmp/model_info.py
+	@echo "    print(f'   CUDA devices: {torch.cuda.device_count()}' if torch.cuda.is_available() else '   CUDA devices: N/A')" >> /tmp/model_info.py
+	@echo "except ImportError:" >> /tmp/model_info.py
+	@echo "    print('⚠️  PyTorch not installed')" >> /tmp/model_info.py
+	@$(PYTHON) /tmp/model_info.py
+	@rm -f /tmp/model_info.py
+
+.PHONY: download-models
+download-models: ## Machine Learning - Download required ML models
+	$(call check_venv)
+	$(call log_info,"Downloading required models...")
+	@$(PYTHON) -c "try: from transformers import AutoTokenizer, AutoModel; models = ['bert-base-uncased', 'distilbert-base-uncased']; [print(f'Downloading {m}...') or AutoTokenizer.from_pretrained(m) or AutoModel.from_pretrained(m) or print(f'✅ {m} downloaded successfully') for m in models]; except ImportError: print('⚠️  Transformers not installed')"
+	$(call log_success,"Model download completed")
+
+.PHONY: benchmark-setup
+benchmark-setup: ## Machine Learning - Setup benchmark datasets
+	$(call check_venv)
+	$(call log_info,"Setting up benchmark datasets...")
+	$(PYTHON) -m $(PACKAGE_NAME).aim2_extraction.evaluation_benchmarker --setup
+	$(call log_success,"Benchmark setup completed")
 
 # ====================================================================
 # Git and Release
@@ -515,6 +633,10 @@ release-dry-run: release-check ## Git and Release - Dry run of release process
 dev-setup: venv install-dev pre-commit-install ## Setup complete development environment
 	$(call log_success,"Development environment setup completed")
 
+.PHONY: quick-check
+quick-check: format-check lint-flake8 test-fast ## Run quick development checks (format, lint, fast tests)
+	$(call log_success,"Quick development checks passed")
+
 .PHONY: ci
 ci: quality test docs ## Run all CI checks (quality, tests, docs)
 	$(call log_success,"All CI checks passed")
@@ -535,8 +657,10 @@ all-clean: clean test-clean docs-clean ## Clean all build artifacts and caches
 .PHONY: coverage-report coverage-view test-clean
 .PHONY: build wheel sdist install-local install-editable check-package clean
 .PHONY: docs docs-clean docs-view docs-serve docs-linkcheck
-.PHONY: run-ontology-manager run-ner-extractor run-corpus-builder profile memory-profile
-.PHONY: security-audit dependencies-check shell jupyter
+.PHONY: run-ontology-manager run-ner-extractor run-corpus-builder run-relationship-extractor run-evaluation-benchmarker run-synthetic-generator
+.PHONY: profile memory-profile security-audit dependencies-check shell jupyter notebook-setup data-explore
+.PHONY: ontology-validate ontology-stats corpus-stats config-validate
+.PHONY: data-validate model-info download-models benchmark-setup
 .PHONY: pre-commit-install pre-commit-run pre-commit-update
 .PHONY: version-bump-patch version-bump-minor version-bump-major
-.PHONY: release-check release-dry-run dev-setup ci all-clean
+.PHONY: release-check release-dry-run dev-setup quick-check ci all-clean

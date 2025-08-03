@@ -8,7 +8,7 @@
 - [x] **AIM2-001-02** Initialize git with main branch
 - [x] **AIM2-001-03** Create folder structure as per design
 - [x] **AIM2-001-04** Add .gitignore for Python projects
-- [x] **AIM2-001-05** Create empty __init__.py files in all packages
+- [x] **AIM2-001-05** Create empty \_\_init\_\_.py files in all packages
 - [x] **AIM2-001-06** Write initial README.md with project overview
 - [x] **AIM2-001-07** Add LICENSE file (MIT or chosen license)
 - [x] **AIM2-001-08** Create CONTRIBUTING.md guidelines
@@ -22,9 +22,9 @@
 - [x] **AIM2-002-03** Create requirements-dev.txt for development tools
 - [x] **AIM2-002-04** Write setup.py with package metadata
 - [x] **AIM2-002-05** Create setup.cfg for tool configurations
-- [ ] **AIM2-002-06** Write Makefile for common commands
-- [ ] **AIM2-002-07** Create virtual environment setup script
-- [ ] **AIM2-002-08** Add pre-commit hooks configuration
+- [x] **AIM2-002-06** Write Makefile for common commands
+- [x] **AIM2-002-07** Create virtual environment setup script
+- [x] **AIM2-002-08** Add pre-commit hooks configuration
 - [ ] **AIM2-002-09** Document environment setup in README
 - [ ] **AIM2-002-10** Test installation in clean environment
 - [ ] **AIM2-002-11** Run unit tests for setup verification
@@ -689,6 +689,7 @@
 ## Task ID Format
 
 Each task has a unique ID: `AIM2-[TICKET_NUMBER]-[TASK_NUMBER]`
+
 - Example: `AIM2-051-01` = Ticket 51, Task 1
 - All tickets start with unit test writing
 - All tickets end with running unit tests
