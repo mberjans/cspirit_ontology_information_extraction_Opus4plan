@@ -47,7 +47,7 @@
 - [x] **AIM2-004-08** Implement log level configuration
 - [x] **AIM2-004-09** Create module-specific logger factory
 - [x] **AIM2-004-10** Add performance logging decorators
-- [ ] **AIM2-004-11** Test log rotation functionality
+- [x] **AIM2-004-11** Test log rotation functionality
 - [ ] **AIM2-004-12** Run all logging unit tests
 - [ ] **AIM2-005-01** Write unit tests for exception hierarchy
 - [ ] **AIM2-005-02** Create AIM2Exception base class
