@@ -12,7 +12,7 @@
 - [x] **AIM2-001-06** Write initial README.md with project overview
 - [x] **AIM2-001-07** Add LICENSE file (MIT or chosen license)
 - [x] **AIM2-001-08** Create CONTRIBUTING.md guidelines
-- [ ] **AIM2-001-09** Set up branch protection rules
+- [x] **AIM2-001-09** Set up branch protection rules
 - [ ] **AIM2-001-10** Create initial commit and push
 
 ### AIM2-002: Development Environment Configuration
