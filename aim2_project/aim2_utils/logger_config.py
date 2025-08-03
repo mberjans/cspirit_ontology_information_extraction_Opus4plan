@@ -71,6 +71,9 @@ class LoggerConfig:
         "file_path": None,
         "max_file_size": "10MB",
         "backup_count": 3,
+        "enable_colors": True,
+        "color_scheme": "default",
+        "force_colors": False,
     }
 
     # Valid logging levels
@@ -78,6 +81,9 @@ class LoggerConfig:
 
     # Valid handler types
     VALID_HANDLERS = ["console", "file"]
+
+    # Valid color schemes
+    VALID_COLOR_SCHEMES = ["default", "bright", "minimal"]
 
     # Size unit multipliers (case-insensitive)
     SIZE_UNITS = {
@@ -245,6 +251,27 @@ class LoggerConfig:
         elif backup_count > 100:
             errors.append("backup_count cannot exceed 100")
 
+        # Validate enable_colors
+        enable_colors = config.get(
+            "enable_colors", self.DEFAULT_CONFIG["enable_colors"]
+        )
+        if not isinstance(enable_colors, bool):
+            errors.append("enable_colors must be a boolean")
+
+        # Validate color_scheme
+        color_scheme = config.get("color_scheme", self.DEFAULT_CONFIG["color_scheme"])
+        if not isinstance(color_scheme, str):
+            errors.append("color_scheme must be a string")
+        elif color_scheme not in self.VALID_COLOR_SCHEMES:
+            errors.append(
+                f"Invalid color scheme '{color_scheme}'. Must be one of: {', '.join(self.VALID_COLOR_SCHEMES)}"
+            )
+
+        # Validate force_colors
+        force_colors = config.get("force_colors", self.DEFAULT_CONFIG["force_colors"])
+        if not isinstance(force_colors, bool):
+            errors.append("force_colors must be a boolean")
+
         # Check for file handler requirements
         if "file" in handlers:
             if file_path is None:
@@ -344,6 +371,33 @@ class LoggerConfig:
             "file" in self.config["handlers"] and self.config["file_path"] is not None
         )
 
+    def get_enable_colors(self) -> bool:
+        """
+        Get whether colors are enabled for console output.
+
+        Returns:
+            bool: True if colors are enabled
+        """
+        return self.config["enable_colors"]
+
+    def get_color_scheme(self) -> str:
+        """
+        Get the color scheme for console output.
+
+        Returns:
+            str: Color scheme name
+        """
+        return self.config["color_scheme"]
+
+    def get_force_colors(self) -> bool:
+        """
+        Get whether colors should be forced even if terminal doesn't support them.
+
+        Returns:
+            bool: True if colors should be forced
+        """
+        return self.config["force_colors"]
+
     def update_config(self, updates: Dict[str, Any]) -> None:
         """
         Update the logging configuration with new values.
@@ -405,6 +459,52 @@ class LoggerConfig:
                 raise LoggerConfigError(f"Invalid file path '{file_path}': {str(e)}", e)
 
         self.config["file_path"] = file_path
+
+    def set_enable_colors(self, enable_colors: bool) -> None:
+        """
+        Set whether colors are enabled for console output.
+
+        Args:
+            enable_colors (bool): Whether to enable colors
+
+        Raises:
+            LoggerConfigError: If enable_colors is not a boolean
+        """
+        if not isinstance(enable_colors, bool):
+            raise LoggerConfigError("enable_colors must be a boolean")
+        self.config["enable_colors"] = enable_colors
+
+    def set_color_scheme(self, color_scheme: str) -> None:
+        """
+        Set the color scheme for console output.
+
+        Args:
+            color_scheme (str): Color scheme name to set
+
+        Raises:
+            LoggerConfigError: If color scheme is invalid
+        """
+        if not isinstance(color_scheme, str):
+            raise LoggerConfigError("color_scheme must be a string")
+        if color_scheme not in self.VALID_COLOR_SCHEMES:
+            raise LoggerConfigError(
+                f"Invalid color scheme '{color_scheme}'. Must be one of: {', '.join(self.VALID_COLOR_SCHEMES)}"
+            )
+        self.config["color_scheme"] = color_scheme
+
+    def set_force_colors(self, force_colors: bool) -> None:
+        """
+        Set whether colors should be forced even if terminal doesn't support them.
+
+        Args:
+            force_colors (bool): Whether to force colors
+
+        Raises:
+            LoggerConfigError: If force_colors is not a boolean
+        """
+        if not isinstance(force_colors, bool):
+            raise LoggerConfigError("force_colors must be a boolean")
+        self.config["force_colors"] = force_colors
 
     def add_handler(self, handler: str) -> None:
         """
@@ -485,6 +585,9 @@ class LoggerConfig:
             "FILE_PATH": "file_path",
             "MAX_FILE_SIZE": "max_file_size",
             "BACKUP_COUNT": "backup_count",
+            "ENABLE_COLORS": "enable_colors",
+            "COLOR_SCHEME": "color_scheme",
+            "FORCE_COLORS": "force_colors",
         }
 
         for env_suffix, config_key in env_mappings.items():
@@ -500,6 +603,10 @@ class LoggerConfig:
                         raise LoggerConfigError(
                             f"Invalid integer value for {env_key}: {env_value}"
                         )
+                elif config_key in ["enable_colors", "force_colors"]:
+                    # Convert string to boolean
+                    bool_value = env_value.lower() in ["true", "1", "yes", "on"]
+                    self.config[config_key] = bool_value
                 elif config_key == "file_path" and env_value.lower() in [
                     "null",
                     "none",

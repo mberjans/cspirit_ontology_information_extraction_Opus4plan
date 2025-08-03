@@ -29,6 +29,7 @@ import atexit
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from .logger_config import LoggerConfig, LoggerConfigError
+from .colored_console_handler import ColoredConsoleHandler
 
 
 class LoggerManagerError(Exception):
@@ -496,8 +497,22 @@ class LoggerManager:
             )
 
     def _create_console_handler(self) -> logging.StreamHandler:
-        """Create a console handler."""
-        return logging.StreamHandler()
+        """Create a console handler with optional color support."""
+        # Check if colors are enabled in configuration
+        enable_colors = self.config.get_enable_colors()
+        color_scheme = self.config.get_color_scheme()
+        force_colors = self.config.get_force_colors()
+
+        # Create colored console handler if colors are enabled
+        if enable_colors:
+            return ColoredConsoleHandler(
+                enable_colors=enable_colors,
+                color_scheme=color_scheme,
+                force_colors=force_colors,
+            )
+        else:
+            # Fall back to standard StreamHandler when colors are disabled
+            return logging.StreamHandler()
 
     def _create_file_handler(self) -> Optional[logging.Handler]:
         """Create a file handler (rotating if configured)."""
