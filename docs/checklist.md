@@ -74,9 +74,9 @@
 - [x] **AIM2-011-12** Add equality and hashing methods
 - [x] **AIM2-011-13** Create string representations
 - [x] **AIM2-011-14** Run all model unit tests
-- [ ] **AIM2-012-01** Write unit tests for OWL parser
-- [ ] **AIM2-012-02** Write unit tests for CSV parser
-- [ ] **AIM2-012-03** Write unit tests for JSON-LD parser
+- [x] **AIM2-012-01** Write unit tests for OWL parser
+- [x] **AIM2-012-02** Write unit tests for CSV parser
+- [x] **AIM2-012-03** Write unit tests for JSON-LD parser
 - [ ] **AIM2-012-04** Create AbstractParser base class
 - [ ] **AIM2-012-05** Implement OWL file parser
 - [ ] **AIM2-012-06** Add RDF triple extraction
