@@ -1,0 +1,1 @@
+"""Integration tests for AIM2 project."""
