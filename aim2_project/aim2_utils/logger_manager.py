@@ -33,6 +33,11 @@ from .rotating_file_handler import create_rotating_file_handler
 from .logger_config import LoggerConfig, LoggerConfigError
 from .colored_console_handler import ColoredConsoleHandler
 from .json_formatter import JSONFormatter
+from .request_context import RequestContextManager
+from .context_injection import (
+    ContextInjectionFilter,
+    ContextInjectingLogger,
+)
 
 
 class LoggerManagerError(Exception):
@@ -91,6 +96,10 @@ class LoggerManager:
         self._lock = threading.RLock()
         self._initialized = False
         self._cleanup_registered = False
+
+        # Context injection support
+        self.context_manager: Optional[RequestContextManager] = None
+        self.context_injection_filter: Optional[ContextInjectionFilter] = None
 
     def initialize(self) -> None:
         """
@@ -169,7 +178,9 @@ class LoggerManager:
                 logger = logging.getLogger(logger_name)
 
                 # Configure logger level and propagation
-                logger.setLevel(self.config.get_level_int())
+                # Use module-specific level if available, otherwise use global level
+                effective_level = self._get_effective_level_for_logger(logger_name)
+                logger.setLevel(getattr(logging, effective_level))
 
                 # For non-root loggers, enable propagation to root
                 if logger_name != self.ROOT_LOGGER_NAME:
@@ -239,10 +250,10 @@ class LoggerManager:
                 # Recreate root logger with new configuration
                 self._setup_root_logger()
 
-                # Update existing loggers with new level
-                new_level = self.config.get_level_int()
-                for logger in self.loggers.values():
-                    logger.setLevel(new_level)
+                # Update existing loggers with new levels (considering module-specific levels)
+                for logger_name, logger in self.loggers.items():
+                    effective_level = self._get_effective_level_for_logger(logger_name)
+                    logger.setLevel(getattr(logging, effective_level))
 
                 # Clear handler cache to force recreation
                 self.handlers.clear()
@@ -271,15 +282,128 @@ class LoggerManager:
                 # Update configuration
                 self.config.set_level(level)
 
-                # Update all existing loggers
-                new_level_int = self.config.get_level_int()
-                for logger in self.loggers.values():
-                    logger.setLevel(new_level_int)
+                # Update all existing loggers with their effective levels
+                for logger_name, logger in self.loggers.items():
+                    effective_level = self._get_effective_level_for_logger(logger_name)
+                    logger.setLevel(getattr(logging, effective_level))
 
             except Exception as e:
                 if isinstance(e, LoggerConfigError):
                     raise LoggerManagerError(f"Failed to set level: {str(e)}", e)
                 raise LoggerManagerError(f"Unexpected error setting level: {str(e)}", e)
+
+    def set_module_level(self, module_name: str, level: str) -> None:
+        """
+        Set the logging level for a specific module.
+
+        Args:
+            module_name (str): Name of the module
+            level (str): Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+        Raises:
+            LoggerManagerError: If module name or level is invalid
+        """
+        with self._lock:
+            try:
+                # Update configuration
+                self.config.set_module_level(module_name, level)
+
+                # Update all existing loggers that might be affected
+                self._apply_module_level_updates()
+
+            except Exception as e:
+                if isinstance(e, LoggerConfigError):
+                    raise LoggerManagerError(f"Failed to set module level: {str(e)}", e)
+                raise LoggerManagerError(
+                    f"Unexpected error setting module level: {str(e)}", e
+                )
+
+    def get_module_level(self, module_name: str) -> Optional[str]:
+        """
+        Get the specific logging level configured for a module.
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            Optional[str]: Module-specific level or None if not configured
+        """
+        return self.config.get_module_level(module_name)
+
+    def get_effective_module_level(self, module_name: str) -> str:
+        """
+        Get the effective logging level for a module (considering hierarchy).
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            str: Effective logging level for the module
+        """
+        return self.config.get_effective_level(module_name)
+
+    def remove_module_level(self, module_name: str) -> bool:
+        """
+        Remove the specific logging level configuration for a module.
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            bool: True if module level was removed, False if it wasn't configured
+
+        Raises:
+            LoggerManagerError: If an error occurs during removal
+        """
+        with self._lock:
+            try:
+                removed = self.config.remove_module_level(module_name)
+
+                if removed:
+                    # Update all existing loggers that might be affected
+                    self._apply_module_level_updates()
+
+                return removed
+
+            except Exception as e:
+                raise LoggerManagerError(f"Failed to remove module level: {str(e)}", e)
+
+    def clear_module_levels(self) -> None:
+        """
+        Clear all module-specific logging level configurations.
+
+        Raises:
+            LoggerManagerError: If an error occurs during clearing
+        """
+        with self._lock:
+            try:
+                self.config.clear_module_levels()
+
+                # Update all existing loggers to use global level
+                self._apply_module_level_updates()
+
+            except Exception as e:
+                raise LoggerManagerError(f"Failed to clear module levels: {str(e)}", e)
+
+    def get_module_levels(self) -> Dict[str, str]:
+        """
+        Get all configured module-specific logging levels.
+
+        Returns:
+            Dict[str, str]: Dictionary mapping module names to log levels
+        """
+        return self.config.get_module_levels()
+
+    def _apply_module_level_updates(self) -> None:
+        """
+        Apply module-specific level updates to all existing loggers.
+
+        This method should be called after module-specific level changes
+        to update all affected loggers.
+        """
+        for logger_name, logger in self.loggers.items():
+            effective_level = self._get_effective_level_for_logger(logger_name)
+            logger.setLevel(getattr(logging, effective_level))
 
     def add_handler_to_logger(self, logger_name: str, handler_type: str) -> None:
         """
@@ -366,11 +490,14 @@ class LoggerManager:
                 "loggers": {},
                 "handlers": list(self.handlers.keys()),
                 "initialized": self._initialized,
+                "module_levels": self.config.get_module_levels(),
             }
 
             for name, logger in self.loggers.items():
+                effective_level = self._get_effective_level_for_logger(name)
                 info["loggers"][name] = {
                     "level": logging.getLevelName(logger.level),
+                    "effective_level": effective_level,
                     "handlers": [type(h).__name__ for h in logger.handlers],
                     "propagate": logger.propagate,
                 }
@@ -446,6 +573,9 @@ class LoggerManager:
                 handler = self._create_handler(handler_type)
                 if handler:
                     self.root_logger.addHandler(handler)
+
+            # Set up context injection if enabled
+            self._setup_context_injection()
 
             # Cache the root logger
             self.loggers[self.ROOT_LOGGER_NAME] = self.root_logger
@@ -536,6 +666,8 @@ class LoggerManager:
             time_when = self.config.get_time_when()
 
             # Create enhanced rotating file handler
+            # Set handler level to DEBUG to allow all messages through
+            # Logger-level filtering will handle module-specific levels
             handler = create_rotating_file_handler(
                 filename=file_path,
                 rotation_type=rotation_type,
@@ -544,7 +676,7 @@ class LoggerManager:
                 time_interval=time_interval,
                 time_when=time_when,
                 encoding="utf-8",
-                level=self.config.get_level_int(),
+                level=logging.DEBUG,
             )
 
             return handler
@@ -585,12 +717,135 @@ class LoggerManager:
                 # Create standard formatter
                 return logging.Formatter(self.config.get_format())
             else:
-                raise LoggerManagerError(f"Unsupported formatter type: {formatter_type}")
+                raise LoggerManagerError(
+                    f"Unsupported formatter type: {formatter_type}"
+                )
 
         except Exception as e:
             if isinstance(e, LoggerManagerError):
                 raise
             raise LoggerManagerError(f"Failed to create formatter: {str(e)}", e)
+
+    def _setup_context_injection(self) -> None:
+        """
+        Set up context injection for the root logger based on configuration.
+        """
+        try:
+            # Check if context injection is enabled
+            if not self.config.get_enable_context_injection():
+                return
+
+            injection_method = self.config.get_context_injection_method()
+
+            if injection_method == "disabled":
+                return
+
+            # Initialize context manager if not already done
+            if self.context_manager is None:
+                self.context_manager = RequestContextManager(
+                    auto_generate_request_id=self.config.get_auto_generate_request_id(),
+                    request_id_field=self.config.get_request_id_field(),
+                    default_context=self.config.get_default_context(),
+                    allowed_context_fields=set(self.config.get_context_fields()),
+                )
+
+            # Apply context injection based on method
+            if injection_method == "filter":
+                # Create and add context injection filter
+                self.context_injection_filter = ContextInjectionFilter(
+                    context_manager=self.context_manager,
+                    context_prefix=self.config.get_context_prefix(),
+                    include_full_context=self.config.get_include_context_in_json(),
+                )
+                self.root_logger.addFilter(self.context_injection_filter)
+
+            elif injection_method == "replace":
+                # Replace logger class (more comprehensive but invasive)
+                if self.root_logger:
+                    # Convert existing logger to ContextInjectingLogger
+                    self.root_logger.__class__ = ContextInjectingLogger
+                    self.root_logger.context_manager = self.context_manager
+
+        except Exception as e:
+            # Don't fail initialization if context injection fails
+            # Log the error if we have a working logger
+            if self.root_logger:
+                self.root_logger.warning(
+                    f"Failed to set up context injection: {str(e)}"
+                )
+
+    def get_context_manager(self) -> Optional[RequestContextManager]:
+        """
+        Get the request context manager instance.
+
+        Returns:
+            Optional[RequestContextManager]: Context manager or None if not initialized
+        """
+        return self.context_manager
+
+    def set_context_manager(self, context_manager: RequestContextManager) -> None:
+        """
+        Set a custom context manager instance.
+
+        Args:
+            context_manager: RequestContextManager instance to use
+
+        Raises:
+            LoggerManagerError: If context manager is invalid
+        """
+        if not isinstance(context_manager, RequestContextManager):
+            raise LoggerManagerError(
+                "Context manager must be a RequestContextManager instance"
+            )
+
+        with self._lock:
+            self.context_manager = context_manager
+
+            # Update context injection if already initialized
+            if self._initialized and self.config.get_enable_context_injection():
+                self._setup_context_injection()
+
+    def update_context_injection(self) -> None:
+        """
+        Update context injection configuration.
+
+        This method can be called after configuration changes to apply
+        new context injection settings.
+        """
+        with self._lock:
+            if not self._initialized:
+                return
+
+            # Remove existing context injection
+            if self.context_injection_filter and self.root_logger:
+                self.root_logger.removeFilter(self.context_injection_filter)
+                self.context_injection_filter = None
+
+            # Re-setup context injection with new configuration
+            self._setup_context_injection()
+
+    def _get_effective_level_for_logger(self, logger_name: str) -> str:
+        """
+        Get the effective log level for a logger based on module-specific configuration.
+
+        Args:
+            logger_name (str): Name of the logger
+
+        Returns:
+            str: Effective log level for the logger
+        """
+        # For root logger, always use global level
+        if logger_name == self.ROOT_LOGGER_NAME:
+            return self.config.get_level()
+
+        # Extract module name from logger name
+        # Logger names follow pattern: "aim2.module.submodule"
+        if logger_name.startswith(f"{self.ROOT_LOGGER_NAME}."):
+            module_name = logger_name[len(f"{self.ROOT_LOGGER_NAME}.") :]
+            return self.config.get_effective_level(module_name)
+
+        # For non-hierarchical logger names, use global level
+        return self.config.get_level()
 
     def _cleanup_handlers(self) -> None:
         """Clean up all managed handlers."""
@@ -613,3 +868,73 @@ class LoggerManager:
         except Exception as e:
             # Don't raise during cleanup, just log the error
             print(f"Warning: Error during handler cleanup: {e}")
+
+    def create_performance_logger(
+        self, name: str, enable_performance_features: bool = True, **perf_kwargs
+    ) -> logging.Logger:
+        """
+        Create a logger optimized for performance monitoring.
+
+        Args:
+            name: Logger name
+            enable_performance_features: Whether to enable performance-specific features
+            **perf_kwargs: Additional performance configuration options
+
+        Returns:
+            logging.Logger: Logger configured for performance monitoring
+
+        Raises:
+            LoggerManagerError: If logger creation fails
+        """
+        with self._lock:
+            try:
+                # Get or create the logger
+                logger = self.get_logger(name)
+
+                # Configure for performance monitoring if enabled
+                if (
+                    enable_performance_features
+                    and self.config.get_enable_performance_logging()
+                ):
+                    # Ensure JSON formatter is used if performance logging is enabled
+                    # Performance data is best captured in structured JSON format
+                    if self.config.get_formatter_type() != "json":
+                        # Log a warning that performance data will be limited in non-JSON format
+                        if hasattr(logger, "warning"):
+                            logger.warning(
+                                "Performance logging works best with JSON formatter. "
+                                "Consider setting formatter_type to 'json' for full performance data capture."
+                            )
+
+                    # Performance loggers benefit from context injection
+                    if self.config.get_enable_context_injection():
+                        # Context injection is already set up during initialization
+                        pass
+
+                return logger
+
+            except Exception as e:
+                raise LoggerManagerError(
+                    f"Failed to create performance logger '{name}': {str(e)}", e
+                )
+
+    def get_performance_config_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of performance logging configuration.
+
+        Returns:
+            Dict[str, Any]: Performance configuration summary
+        """
+        try:
+            return {
+                "enabled": self.config.get_enable_performance_logging(),
+                "thresholds": self.config.get_performance_thresholds(),
+                "profiles": self.config.get_performance_profiles(),
+                "metrics": self.config.get_performance_metrics(),
+                "context_prefix": self.config.get_performance_context_prefix(),
+                "auto_operation_naming": self.config.get_performance_auto_operation_naming(),
+                "formatter_type": self.config.get_formatter_type(),
+                "context_injection_enabled": self.config.get_enable_context_injection(),
+            }
+        except Exception as e:
+            return {"error": f"Failed to get performance config: {str(e)}"}

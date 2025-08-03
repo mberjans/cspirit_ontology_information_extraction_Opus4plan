@@ -27,7 +27,7 @@ import logging
 import traceback
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 
 class JSONFormatterError(Exception):
@@ -185,7 +185,10 @@ class JSONFormatter(logging.Formatter):
         if not isinstance(self.timestamp_format, str):
             raise JSONFormatterError("timestamp_format must be a string")
 
-        if self.timestamp_format not in ["iso", "epoch"] and not self.timestamp_format.startswith("%"):
+        if self.timestamp_format not in [
+            "iso",
+            "epoch",
+        ] and not self.timestamp_format.startswith("%"):
             raise JSONFormatterError(
                 "timestamp_format must be 'iso', 'epoch', or a valid strftime format"
             )
@@ -196,8 +199,13 @@ class JSONFormatter(logging.Formatter):
 
         # Validate max_message_length
         if self.max_message_length is not None:
-            if not isinstance(self.max_message_length, int) or self.max_message_length < 1:
-                raise JSONFormatterError("max_message_length must be a positive integer or None")
+            if (
+                not isinstance(self.max_message_length, int)
+                or self.max_message_length < 1
+            ):
+                raise JSONFormatterError(
+                    "max_message_length must be a positive integer or None"
+                )
 
         # Validate field_mapping
         if not isinstance(self.field_mapping, dict):
@@ -231,7 +239,9 @@ class JSONFormatter(logging.Formatter):
                     "level": "ERROR",
                     "logger_name": "json_formatter",
                     "message": f"JSON formatting failed: {str(e)}",
-                    "original_message": getattr(record, "getMessage", lambda: str(record.msg))(),
+                    "original_message": getattr(
+                        record, "getMessage", lambda: str(record.msg)
+                    )(),
                     "error": str(e),
                 }
 
@@ -239,11 +249,15 @@ class JSONFormatter(logging.Formatter):
                     return self._serialize_json(fallback_data)
                 except Exception:
                     # Ultimate fallback - return a simple string
-                    return json.dumps({
-                        "error": "JSON formatting completely failed",
-                        "message": str(record.msg) if hasattr(record, "msg") else "Unknown message",
-                        "timestamp": datetime.now().isoformat(),
-                    })
+                    return json.dumps(
+                        {
+                            "error": "JSON formatting completely failed",
+                            "message": str(record.msg)
+                            if hasattr(record, "msg")
+                            else "Unknown message",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
 
     def _build_json_data(self, record: logging.LogRecord) -> Dict[str, Any]:
         """
@@ -261,7 +275,9 @@ class JSONFormatter(logging.Formatter):
         for field in self.fields:
             try:
                 value = self._extract_field_value(field, record)
-                if value is not None or field in ["message"]:  # Always include message even if None
+                if value is not None or field in [
+                    "message"
+                ]:  # Always include message even if None
                     output_field_name = self.field_mapping.get(field, field)
                     json_data[output_field_name] = value
             except Exception as e:
@@ -270,8 +286,26 @@ class JSONFormatter(logging.Formatter):
 
         # Add custom fields if requested
         if "custom_fields" in self.fields and self.custom_fields:
-            custom_output_name = self.field_mapping.get("custom_fields", "custom_fields")
-            json_data[custom_output_name] = self._safe_serialize_value(self.custom_fields)
+            custom_output_name = self.field_mapping.get(
+                "custom_fields", "custom_fields"
+            )
+            json_data[custom_output_name] = self._safe_serialize_value(
+                self.custom_fields
+            )
+
+        # Add context information if available
+        context_fields = self._extract_context_fields(record)
+        if context_fields:
+            context_output_name = self.field_mapping.get("context", "context")
+            json_data[context_output_name] = context_fields
+
+        # Add performance metrics if available
+        performance_fields = self._extract_performance_fields(record)
+        if performance_fields:
+            performance_output_name = self.field_mapping.get(
+                "performance", "performance"
+            )
+            json_data[performance_output_name] = performance_fields
 
         # Add any extra fields from the record
         if hasattr(record, "__dict__"):
@@ -417,10 +451,28 @@ class JSONFormatter(logging.Formatter):
 
         # Standard LogRecord attributes to exclude
         standard_attrs = {
-            "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-            "module", "lineno", "funcName", "created", "msecs", "relativeCreated",
-            "thread", "threadName", "processName", "process", "getMessage",
-            "exc_info", "exc_text", "stack_info", "message"
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "getMessage",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "message",
         }
 
         try:
@@ -432,6 +484,122 @@ class JSONFormatter(logging.Formatter):
             extra_fields["extraction_error"] = "Failed to extract extra fields"
 
         return extra_fields
+
+    def _extract_context_fields(self, record: logging.LogRecord) -> Dict[str, Any]:
+        """
+        Extract context fields from the log record.
+
+        Looks for context information injected by RequestContextManager
+        and formats it appropriately for JSON output.
+
+        Args:
+            record: Log record to extract context from
+
+        Returns:
+            Dict[str, Any]: Context fields
+        """
+        context_fields = {}
+
+        try:
+            # Check for full context injected by ContextInjectionFilter or ContextInjectingLogRecord
+            if hasattr(record, "logging_context"):
+                context_data = record.logging_context
+                if isinstance(context_data, dict):
+                    for key, value in context_data.items():
+                        if value is not None:
+                            context_fields[key] = self._safe_serialize_value(value)
+
+            # Fallback: Look for individual context fields as record attributes
+            if not context_fields:
+                # Common context field names to look for
+                context_field_names = {
+                    "request_id",
+                    "user_id",
+                    "session_id",
+                    "correlation_id",
+                    "trace_id",
+                    "operation",
+                    "component",
+                    "service",
+                    "version",
+                    "environment",
+                }
+
+                for field_name in context_field_names:
+                    if hasattr(record, field_name):
+                        value = getattr(record, field_name)
+                        if value is not None:
+                            context_fields[field_name] = self._safe_serialize_value(
+                                value
+                            )
+
+        except Exception:
+            # If context extraction fails, return empty dict
+            # This ensures logging continues to work even if context processing has issues
+            context_fields = {}
+
+        return context_fields
+
+    def _extract_performance_fields(self, record: logging.LogRecord) -> Dict[str, Any]:
+        """
+        Extract performance metrics from the log record.
+
+        Looks for performance metrics injected by PerformanceTracker
+        and formats them appropriately for JSON output.
+
+        Args:
+            record: Log record to extract performance metrics from
+
+        Returns:
+            Dict[str, Any]: Performance metrics fields
+        """
+        performance_fields = {}
+
+        try:
+            # Check for performance metrics in extra fields
+            if hasattr(record, "performance_metrics"):
+                performance_data = record.performance_metrics
+                if isinstance(performance_data, dict):
+                    for key, value in performance_data.items():
+                        if value is not None:
+                            performance_fields[key] = self._safe_serialize_value(value)
+
+            # Also check for performance field (alternative location)
+            elif hasattr(record, "performance"):
+                performance_data = record.performance
+                if isinstance(performance_data, dict):
+                    for key, value in performance_data.items():
+                        if value is not None:
+                            performance_fields[key] = self._safe_serialize_value(value)
+
+            # Fallback: Look for individual performance fields as record attributes
+            if not performance_fields:
+                # Performance field names to look for
+                performance_field_names = {
+                    "perf_operation",
+                    "perf_duration",
+                    "perf_success",
+                    "perf_exceeded_warning",
+                    "perf_exceeded_critical",
+                    "perf_error_type",
+                    "perf_memory_delta_mb",
+                    "perf_start_time",
+                }
+
+                for field_name in performance_field_names:
+                    if hasattr(record, field_name):
+                        value = getattr(record, field_name)
+                        if value is not None:
+                            performance_fields[field_name] = self._safe_serialize_value(
+                                value
+                            )
+
+        except Exception:
+            # If performance extraction fails, return empty dict
+            # This ensures logging continues to work even if performance processing has issues
+            performance_fields = {}
+
+        return performance_fields
 
     def _safe_get_message(self, record: logging.LogRecord) -> Optional[str]:
         """
@@ -613,7 +781,9 @@ class JSONFormatter(logging.Formatter):
         if not isinstance(timestamp_format, str):
             raise JSONFormatterError("timestamp_format must be a string")
 
-        if timestamp_format not in ["iso", "epoch"] and not timestamp_format.startswith("%"):
+        if timestamp_format not in ["iso", "epoch"] and not timestamp_format.startswith(
+            "%"
+        ):
             raise JSONFormatterError(
                 "timestamp_format must be 'iso', 'epoch', or a valid strftime format"
             )

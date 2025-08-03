@@ -88,6 +88,58 @@ class LoggerConfig:
         "json_max_message_length": None,
         "json_field_mapping": {},
         "json_ensure_ascii": False,
+        # Context injection configuration
+        "enable_context_injection": True,
+        "context_injection_method": "filter",
+        "auto_generate_request_id": True,
+        "request_id_field": "request_id",
+        "context_fields": [
+            "request_id",
+            "user_id",
+            "session_id",
+            "correlation_id",
+            "trace_id",
+            "operation",
+            "component",
+            "service",
+            "version",
+            "environment",
+        ],
+        "include_context_in_json": True,
+        "context_prefix": "",
+        "default_context": {},
+        # Module-specific log level configuration
+        "module_levels": {},
+        # Performance logging configuration
+        "enable_performance_logging": True,
+        "performance_thresholds": {
+            "warning_seconds": 1.0,
+            "critical_seconds": 5.0,
+            "memory_warning_mb": 100,
+            "memory_critical_mb": 500,
+        },
+        "performance_profiles": {
+            "fast": {"warning_seconds": 0.1, "critical_seconds": 0.5},
+            "normal": {"warning_seconds": 1.0, "critical_seconds": 5.0},
+            "slow": {"warning_seconds": 10.0, "critical_seconds": 30.0},
+        },
+        "performance_metrics": {
+            "include_memory_usage": False,
+            "include_cpu_usage": False,
+            "include_function_args": False,
+            "include_function_result": False,
+            "max_arg_length": 200,
+            "max_result_length": 200,
+        },
+        "performance_logging_level": {
+            "success": "INFO",
+            "warning": "WARNING",
+            "critical": "CRITICAL",
+            "error": "ERROR",
+        },
+        "performance_context_prefix": "perf_",
+        "performance_operation_field": "operation",
+        "performance_auto_operation_naming": True,
     }
 
     # Valid logging levels
@@ -107,6 +159,9 @@ class LoggerConfig:
 
     # Valid time intervals
     VALID_TIME_INTERVALS = ["hourly", "daily", "weekly", "midnight"]
+
+    # Valid context injection methods
+    VALID_CONTEXT_INJECTION_METHODS = ["filter", "replace", "disabled"]
 
     # Size unit multipliers (case-insensitive)
     SIZE_UNITS = {
@@ -218,7 +273,9 @@ class LoggerConfig:
             errors.append("Logging format cannot be empty")
 
         # Validate formatter_type
-        formatter_type = config.get("formatter_type", self.DEFAULT_CONFIG["formatter_type"])
+        formatter_type = config.get(
+            "formatter_type", self.DEFAULT_CONFIG["formatter_type"]
+        )
         if not isinstance(formatter_type, str):
             errors.append("Formatter type must be a string")
         elif formatter_type not in self.VALID_FORMATTER_TYPES:
@@ -350,6 +407,15 @@ class LoggerConfig:
             if file_path is None:
                 errors.append("file_path must be specified when using file handler")
 
+        # Validate context injection configuration
+        self._validate_context_injection_config(config, errors)
+
+        # Validate module-specific levels configuration
+        self._validate_module_levels_config(config, errors)
+
+        # Validate performance logging configuration
+        self._validate_performance_config(config, errors)
+
         if errors:
             error_msg = "Logging configuration validation failed:\n" + "\n".join(
                 f"  - {err}" for err in errors
@@ -358,7 +424,9 @@ class LoggerConfig:
 
         return True
 
-    def _validate_json_formatter_config(self, config: Dict[str, Any], errors: List[str]) -> None:
+    def _validate_json_formatter_config(
+        self, config: Dict[str, Any], errors: List[str]
+    ) -> None:
         """
         Validate JSON formatter specific configuration.
 
@@ -372,32 +440,60 @@ class LoggerConfig:
             errors.append("json_fields must be a list")
         else:
             valid_fields = [
-                "timestamp", "level", "level_number", "logger_name", "module", "function",
-                "line_number", "message", "pathname", "filename", "thread", "thread_name",
-                "process", "process_name", "exception", "stack_info", "extra", "custom_fields"
+                "timestamp",
+                "level",
+                "level_number",
+                "logger_name",
+                "module",
+                "function",
+                "line_number",
+                "message",
+                "pathname",
+                "filename",
+                "thread",
+                "thread_name",
+                "process",
+                "process_name",
+                "exception",
+                "stack_info",
+                "extra",
+                "custom_fields",
             ]
             for field in json_fields:
                 if not isinstance(field, str):
                     errors.append(f"JSON field '{field}' must be a string")
                 elif field not in valid_fields:
-                    errors.append(f"Invalid JSON field '{field}'. Valid fields: {', '.join(valid_fields)}")
+                    errors.append(
+                        f"Invalid JSON field '{field}'. Valid fields: {', '.join(valid_fields)}"
+                    )
 
         # Validate json_pretty_print
-        json_pretty_print = config.get("json_pretty_print", self.DEFAULT_CONFIG["json_pretty_print"])
+        json_pretty_print = config.get(
+            "json_pretty_print", self.DEFAULT_CONFIG["json_pretty_print"]
+        )
         if not isinstance(json_pretty_print, bool):
             errors.append("json_pretty_print must be a boolean")
 
         # Validate json_custom_fields
-        json_custom_fields = config.get("json_custom_fields", self.DEFAULT_CONFIG["json_custom_fields"])
+        json_custom_fields = config.get(
+            "json_custom_fields", self.DEFAULT_CONFIG["json_custom_fields"]
+        )
         if not isinstance(json_custom_fields, dict):
             errors.append("json_custom_fields must be a dictionary")
 
         # Validate json_timestamp_format
-        json_timestamp_format = config.get("json_timestamp_format", self.DEFAULT_CONFIG["json_timestamp_format"])
+        json_timestamp_format = config.get(
+            "json_timestamp_format", self.DEFAULT_CONFIG["json_timestamp_format"]
+        )
         if not isinstance(json_timestamp_format, str):
             errors.append("json_timestamp_format must be a string")
-        elif json_timestamp_format not in ["iso", "epoch"] and not json_timestamp_format.startswith("%"):
-            errors.append("json_timestamp_format must be 'iso', 'epoch', or a valid strftime format")
+        elif json_timestamp_format not in [
+            "iso",
+            "epoch",
+        ] and not json_timestamp_format.startswith("%"):
+            errors.append(
+                "json_timestamp_format must be 'iso', 'epoch', or a valid strftime format"
+            )
 
         # Validate json_use_utc
         json_use_utc = config.get("json_use_utc", self.DEFAULT_CONFIG["json_use_utc"])
@@ -405,25 +501,287 @@ class LoggerConfig:
             errors.append("json_use_utc must be a boolean")
 
         # Validate json_include_exception_traceback
-        json_include_exception_traceback = config.get("json_include_exception_traceback", self.DEFAULT_CONFIG["json_include_exception_traceback"])
+        json_include_exception_traceback = config.get(
+            "json_include_exception_traceback",
+            self.DEFAULT_CONFIG["json_include_exception_traceback"],
+        )
         if not isinstance(json_include_exception_traceback, bool):
             errors.append("json_include_exception_traceback must be a boolean")
 
         # Validate json_max_message_length
-        json_max_message_length = config.get("json_max_message_length", self.DEFAULT_CONFIG["json_max_message_length"])
+        json_max_message_length = config.get(
+            "json_max_message_length", self.DEFAULT_CONFIG["json_max_message_length"]
+        )
         if json_max_message_length is not None:
-            if not isinstance(json_max_message_length, int) or json_max_message_length < 1:
-                errors.append("json_max_message_length must be a positive integer or None")
+            if (
+                not isinstance(json_max_message_length, int)
+                or json_max_message_length < 1
+            ):
+                errors.append(
+                    "json_max_message_length must be a positive integer or None"
+                )
 
         # Validate json_field_mapping
-        json_field_mapping = config.get("json_field_mapping", self.DEFAULT_CONFIG["json_field_mapping"])
+        json_field_mapping = config.get(
+            "json_field_mapping", self.DEFAULT_CONFIG["json_field_mapping"]
+        )
         if not isinstance(json_field_mapping, dict):
             errors.append("json_field_mapping must be a dictionary")
 
         # Validate json_ensure_ascii
-        json_ensure_ascii = config.get("json_ensure_ascii", self.DEFAULT_CONFIG["json_ensure_ascii"])
+        json_ensure_ascii = config.get(
+            "json_ensure_ascii", self.DEFAULT_CONFIG["json_ensure_ascii"]
+        )
         if not isinstance(json_ensure_ascii, bool):
             errors.append("json_ensure_ascii must be a boolean")
+
+    def _validate_context_injection_config(
+        self, config: Dict[str, Any], errors: List[str]
+    ) -> None:
+        """
+        Validate context injection specific configuration.
+
+        Args:
+            config: Configuration dictionary to validate
+            errors: List to append errors to
+        """
+        # Validate enable_context_injection
+        enable_context_injection = config.get(
+            "enable_context_injection", self.DEFAULT_CONFIG["enable_context_injection"]
+        )
+        if not isinstance(enable_context_injection, bool):
+            errors.append("enable_context_injection must be a boolean")
+
+        # Validate context_injection_method
+        context_injection_method = config.get(
+            "context_injection_method", self.DEFAULT_CONFIG["context_injection_method"]
+        )
+        if not isinstance(context_injection_method, str):
+            errors.append("context_injection_method must be a string")
+        elif context_injection_method not in self.VALID_CONTEXT_INJECTION_METHODS:
+            errors.append(
+                f"Invalid context_injection_method '{context_injection_method}'. "
+                f"Must be one of: {', '.join(self.VALID_CONTEXT_INJECTION_METHODS)}"
+            )
+
+        # Validate auto_generate_request_id
+        auto_generate_request_id = config.get(
+            "auto_generate_request_id", self.DEFAULT_CONFIG["auto_generate_request_id"]
+        )
+        if not isinstance(auto_generate_request_id, bool):
+            errors.append("auto_generate_request_id must be a boolean")
+
+        # Validate request_id_field
+        request_id_field = config.get(
+            "request_id_field", self.DEFAULT_CONFIG["request_id_field"]
+        )
+        if not isinstance(request_id_field, str):
+            errors.append("request_id_field must be a string")
+        elif not request_id_field.strip():
+            errors.append("request_id_field cannot be empty")
+
+        # Validate context_fields
+        context_fields = config.get(
+            "context_fields", self.DEFAULT_CONFIG["context_fields"]
+        )
+        if not isinstance(context_fields, list):
+            errors.append("context_fields must be a list")
+        else:
+            for field in context_fields:
+                if not isinstance(field, str):
+                    errors.append(f"Context field '{field}' must be a string")
+                elif not field.strip():
+                    errors.append("Context fields cannot be empty strings")
+
+        # Validate include_context_in_json
+        include_context_in_json = config.get(
+            "include_context_in_json", self.DEFAULT_CONFIG["include_context_in_json"]
+        )
+        if not isinstance(include_context_in_json, bool):
+            errors.append("include_context_in_json must be a boolean")
+
+        # Validate context_prefix
+        context_prefix = config.get(
+            "context_prefix", self.DEFAULT_CONFIG["context_prefix"]
+        )
+        if not isinstance(context_prefix, str):
+            errors.append("context_prefix must be a string")
+
+        # Validate default_context
+        default_context = config.get(
+            "default_context", self.DEFAULT_CONFIG["default_context"]
+        )
+        if not isinstance(default_context, dict):
+            errors.append("default_context must be a dictionary")
+
+    def _validate_module_levels_config(
+        self, config: Dict[str, Any], errors: List[str]
+    ) -> None:
+        """
+        Validate module-specific levels configuration.
+
+        Args:
+            config: Configuration dictionary to validate
+            errors: List to append errors to
+        """
+        # Validate module_levels
+        module_levels = config.get(
+            "module_levels", self.DEFAULT_CONFIG["module_levels"]
+        )
+        if not isinstance(module_levels, dict):
+            errors.append("module_levels must be a dictionary")
+        else:
+            for module_name, level in module_levels.items():
+                # Validate module name
+                if not isinstance(module_name, str):
+                    errors.append(f"Module name '{module_name}' must be a string")
+                elif not module_name.strip():
+                    errors.append("Module names cannot be empty strings")
+                elif not self._is_valid_module_name(module_name):
+                    errors.append(
+                        f"Invalid module name '{module_name}'. Must follow hierarchical pattern (e.g., 'aim2.ontology', 'aim2.extraction.pipeline')"
+                    )
+
+                # Validate level
+                if not isinstance(level, str):
+                    errors.append(f"Level for module '{module_name}' must be a string")
+                elif level.upper() not in self.VALID_LEVELS:
+                    errors.append(
+                        f"Invalid level '{level}' for module '{module_name}'. Must be one of: {', '.join(self.VALID_LEVELS)}"
+                    )
+
+    def _is_valid_module_name(self, module_name: str) -> bool:
+        """
+        Check if a module name follows the valid hierarchical pattern.
+
+        Args:
+            module_name: Module name to validate
+
+        Returns:
+            bool: True if module name is valid
+        """
+        # Allow hierarchical names like "aim2.ontology", "aim2.extraction.pipeline"
+        # Module names should contain only alphanumeric characters, dots, and underscores
+        import re
+
+        pattern = r"^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$"
+        return bool(re.match(pattern, module_name))
+
+    def _validate_performance_config(
+        self, config: Dict[str, Any], errors: List[str]
+    ) -> None:
+        """
+        Validate performance logging configuration.
+
+        Args:
+            config: Configuration dictionary to validate
+            errors: List to append errors to
+        """
+        # Validate enable_performance_logging
+        enable_perf = config.get("enable_performance_logging", True)
+        if not isinstance(enable_perf, bool):
+            errors.append("enable_performance_logging must be a boolean")
+
+        # Validate performance_thresholds
+        thresholds = config.get("performance_thresholds", {})
+        if not isinstance(thresholds, dict):
+            errors.append("performance_thresholds must be a dictionary")
+        else:
+            self._validate_thresholds(thresholds, errors)
+
+        # Validate performance_profiles
+        profiles = config.get("performance_profiles", {})
+        if not isinstance(profiles, dict):
+            errors.append("performance_profiles must be a dictionary")
+        else:
+            self._validate_profiles(profiles, errors)
+
+        # Validate performance_metrics
+        metrics_config = config.get("performance_metrics", {})
+        if not isinstance(metrics_config, dict):
+            errors.append("performance_metrics must be a dictionary")
+        else:
+            self._validate_metrics_config(metrics_config, errors)
+
+        # Validate performance_logging_level
+        logging_levels = config.get("performance_logging_level", {})
+        if not isinstance(logging_levels, dict):
+            errors.append("performance_logging_level must be a dictionary")
+        else:
+            for level_type, level_name in logging_levels.items():
+                if level_type not in ["success", "warning", "critical", "error"]:
+                    errors.append(
+                        f"Invalid performance logging level type: {level_type}"
+                    )
+                if level_name not in self.VALID_LEVELS:
+                    errors.append(
+                        f"Invalid performance logging level '{level_name}' for {level_type}"
+                    )
+
+        # Validate performance_context_prefix
+        context_prefix = config.get("performance_context_prefix", "perf_")
+        if not isinstance(context_prefix, str):
+            errors.append("performance_context_prefix must be a string")
+
+        # Validate performance_auto_operation_naming
+        auto_naming = config.get("performance_auto_operation_naming", True)
+        if not isinstance(auto_naming, bool):
+            errors.append("performance_auto_operation_naming must be a boolean")
+
+    def _validate_thresholds(
+        self, thresholds: Dict[str, Any], errors: List[str]
+    ) -> None:
+        """Validate threshold configuration."""
+        for key, value in thresholds.items():
+            if key.endswith("_seconds") or key.endswith("_mb"):
+                if not isinstance(value, (int, float)) or value < 0:
+                    errors.append(f"Threshold '{key}' must be a non-negative number")
+
+        # Check logical relationships
+        if (
+            "warning_seconds" in thresholds
+            and "critical_seconds" in thresholds
+            and thresholds["warning_seconds"] >= thresholds["critical_seconds"]
+        ):
+            errors.append("warning_seconds must be less than critical_seconds")
+
+    def _validate_profiles(self, profiles: Dict[str, Any], errors: List[str]) -> None:
+        """Validate performance profile configuration."""
+        for profile_name, profile_config in profiles.items():
+            if not isinstance(profile_config, dict):
+                errors.append(f"Profile '{profile_name}' must be a dictionary")
+                continue
+
+            # Validate each profile's thresholds
+            temp_errors = []
+            self._validate_thresholds(profile_config, temp_errors)
+            for error in temp_errors:
+                errors.append(f"Profile '{profile_name}': {error}")
+
+    def _validate_metrics_config(
+        self, metrics_config: Dict[str, Any], errors: List[str]
+    ) -> None:
+        """Validate metrics configuration."""
+        # Boolean fields
+        bool_fields = [
+            "include_memory_usage",
+            "include_cpu_usage",
+            "include_function_args",
+            "include_function_result",
+        ]
+        for field in bool_fields:
+            if field in metrics_config and not isinstance(metrics_config[field], bool):
+                errors.append(f"Metrics config '{field}' must be a boolean")
+
+        # Integer fields
+        int_fields = ["max_arg_length", "max_result_length"]
+        for field in int_fields:
+            if field in metrics_config:
+                value = metrics_config[field]
+                if not isinstance(value, int) or value < 1:
+                    errors.append(
+                        f"Metrics config '{field}' must be a positive integer"
+                    )
 
     def get_level(self) -> str:
         """
@@ -654,6 +1012,235 @@ class LoggerConfig:
             bool: True if ASCII-only output should be ensured
         """
         return self.config["json_ensure_ascii"]
+
+    def get_enable_context_injection(self) -> bool:
+        """
+        Get whether context injection is enabled.
+
+        Returns:
+            bool: True if context injection is enabled
+        """
+        return self.config["enable_context_injection"]
+
+    def get_context_injection_method(self) -> str:
+        """
+        Get the context injection method.
+
+        Returns:
+            str: Context injection method ("filter", "replace", or "disabled")
+        """
+        return self.config["context_injection_method"]
+
+    def get_auto_generate_request_id(self) -> bool:
+        """
+        Get whether request IDs should be auto-generated.
+
+        Returns:
+            bool: True if request IDs should be auto-generated
+        """
+        return self.config["auto_generate_request_id"]
+
+    def get_request_id_field(self) -> str:
+        """
+        Get the field name for request IDs in context.
+
+        Returns:
+            str: Request ID field name
+        """
+        return self.config["request_id_field"]
+
+    def get_context_fields(self) -> List[str]:
+        """
+        Get the list of allowed context fields.
+
+        Returns:
+            List[str]: List of allowed context field names
+        """
+        return self.config["context_fields"].copy()
+
+    def get_include_context_in_json(self) -> bool:
+        """
+        Get whether context should be included in JSON output.
+
+        Returns:
+            bool: True if context should be included in JSON
+        """
+        return self.config["include_context_in_json"]
+
+    def get_context_prefix(self) -> str:
+        """
+        Get the prefix for context fields.
+
+        Returns:
+            str: Context field prefix
+        """
+        return self.config["context_prefix"]
+
+    def get_default_context(self) -> Dict[str, Any]:
+        """
+        Get the default context values.
+
+        Returns:
+            Dict[str, Any]: Default context values
+        """
+        return self.config["default_context"].copy()
+
+    def get_module_levels(self) -> Dict[str, str]:
+        """
+        Get the module-specific log levels.
+
+        Returns:
+            Dict[str, str]: Dictionary mapping module names to log levels
+        """
+        return self.config["module_levels"].copy()
+
+    def get_module_level(self, module_name: str) -> Optional[str]:
+        """
+        Get the log level for a specific module.
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            Optional[str]: Log level for the module or None if not configured
+        """
+        return self.config["module_levels"].get(module_name)
+
+    def get_effective_level(self, module_name: str) -> str:
+        """
+        Get the effective log level for a module, considering hierarchy.
+
+        This method checks for module-specific levels, starting with the full
+        module name and working up the hierarchy. If no specific level is found,
+        returns the global level.
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            str: Effective log level for the module
+        """
+        # Check for exact match first
+        if module_name in self.config["module_levels"]:
+            return self.config["module_levels"][module_name].upper()
+
+        # Check parent modules in hierarchy
+        parts = module_name.split(".")
+        for i in range(len(parts) - 1, 0, -1):
+            parent_module = ".".join(parts[:i])
+            if parent_module in self.config["module_levels"]:
+                return self.config["module_levels"][parent_module].upper()
+
+        # Fall back to global level
+        return self.get_level()
+
+    def get_enable_performance_logging(self) -> bool:
+        """
+        Get whether performance logging is enabled.
+
+        Returns:
+            bool: True if performance logging is enabled
+        """
+        return self.config.get("enable_performance_logging", True)
+
+    def get_performance_thresholds(self) -> Dict[str, float]:
+        """
+        Get the performance thresholds configuration.
+
+        Returns:
+            Dict[str, float]: Performance thresholds
+        """
+        return self.config.get("performance_thresholds", {}).copy()
+
+    def get_performance_profiles(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get the performance profiles configuration.
+
+        Returns:
+            Dict[str, Dict[str, float]]: Performance profiles
+        """
+        return self.config.get("performance_profiles", {}).copy()
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get the performance metrics configuration.
+
+        Returns:
+            Dict[str, Any]: Performance metrics configuration
+        """
+        return self.config.get("performance_metrics", {}).copy()
+
+    def get_performance_logging_level(self) -> Dict[str, str]:
+        """
+        Get the performance logging level mapping.
+
+        Returns:
+            Dict[str, str]: Performance logging level mapping
+        """
+        return self.config.get("performance_logging_level", {}).copy()
+
+    def get_performance_context_prefix(self) -> str:
+        """
+        Get the performance context prefix.
+
+        Returns:
+            str: Performance context prefix
+        """
+        return self.config.get("performance_context_prefix", "perf_")
+
+    def get_performance_auto_operation_naming(self) -> bool:
+        """
+        Get whether automatic operation naming is enabled.
+
+        Returns:
+            bool: True if automatic operation naming is enabled
+        """
+        return self.config.get("performance_auto_operation_naming", True)
+
+    def set_module_level(self, module_name: str, level: str) -> None:
+        """
+        Set the log level for a specific module.
+
+        Args:
+            module_name (str): Name of the module
+            level (str): Log level to set
+
+        Raises:
+            LoggerConfigError: If module name or level is invalid
+        """
+        if not isinstance(module_name, str) or not module_name.strip():
+            raise LoggerConfigError("Module name must be a non-empty string")
+
+        if not self._is_valid_module_name(module_name):
+            raise LoggerConfigError(
+                f"Invalid module name '{module_name}'. Must follow hierarchical pattern (e.g., 'aim2.ontology')"
+            )
+
+        if not isinstance(level, str) or level.upper() not in self.VALID_LEVELS:
+            raise LoggerConfigError(
+                f"Invalid level '{level}'. Must be one of: {', '.join(self.VALID_LEVELS)}"
+            )
+
+        self.config["module_levels"][module_name] = level.upper()
+
+    def remove_module_level(self, module_name: str) -> bool:
+        """
+        Remove the specific log level configuration for a module.
+
+        Args:
+            module_name (str): Name of the module
+
+        Returns:
+            bool: True if module level was removed, False if it wasn't configured
+        """
+        if module_name in self.config["module_levels"]:
+            del self.config["module_levels"][module_name]
+            return True
+        return False
+
+    def clear_module_levels(self) -> None:
+        """Clear all module-specific log level configurations."""
+        self.config["module_levels"].clear()
 
     def update_config(self, updates: Dict[str, Any]) -> None:
         """
@@ -945,6 +1532,34 @@ class LoggerConfig:
             if handlers_str:
                 handlers = [h.strip() for h in handlers_str.split(",") if h.strip()]
                 self.config["handlers"] = handlers
+
+        # Handle module-specific levels
+        # Format: AIM2_LOGGING_MODULE_LEVELS="aim2.ontology=DEBUG,aim2.extraction=INFO"
+        module_levels_env = f"{env_prefix}MODULE_LEVELS"
+        if module_levels_env in os.environ:
+            module_levels_str = os.environ[module_levels_env]
+            if module_levels_str:
+                module_levels = {}
+                try:
+                    pairs = [
+                        pair.strip()
+                        for pair in module_levels_str.split(",")
+                        if pair.strip()
+                    ]
+                    for pair in pairs:
+                        if "=" in pair:
+                            module_name, level = pair.split("=", 1)
+                            module_name = module_name.strip()
+                            level = level.strip().upper()
+                            if module_name and level:
+                                module_levels[module_name] = level
+
+                    if module_levels:
+                        self.config["module_levels"] = module_levels
+                except Exception as e:
+                    raise LoggerConfigError(
+                        f"Invalid format for {module_levels_env}. Expected format: 'module1=LEVEL1,module2=LEVEL2'. Error: {str(e)}"
+                    )
 
     def _parse_size_formats(self) -> None:
         """Parse size format strings in the configuration."""
