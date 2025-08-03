@@ -1,5 +1,5 @@
 # AIM2 Project Default Configuration
-# This is the default configuration file for the AIM2 Ontology Information Extraction project
+# Default configuration file for the AIM2 Ontology Information Extraction project
 # Environment variables with prefix AIM2_ can override these values
 
 # Project metadata
@@ -62,6 +62,45 @@ ontology:
     strict_mode: false
     check_consistency: true
 
+  # Ontology source configurations
+  sources:
+    chebi:
+      enabled: true
+      url: "https://ftp.ebi.ac.uk/pub/databases/chebi/ontology/chebi.owl"
+      local_path: "./data/ontologies/chebi.owl"
+      update_frequency: "weekly"
+      include_deprecated: false
+
+    plant_ontology:
+      enabled: true
+      url: "https://raw.githubusercontent.com/Planteome/plant-ontology/master/po.owl"
+      local_path: "./data/ontologies/po.owl"
+      update_frequency: "weekly"
+      include_deprecated: false
+
+    ncbi_taxonomy:
+      enabled: true
+      url: "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
+      local_path: "./data/ontologies/ncbi_taxonomy/"
+      update_frequency: "monthly"
+      include_deprecated: false
+
+    gene_ontology:
+      enabled: true
+      url: "http://current.geneontology.org/ontology/go.owl"
+      local_path: "./data/ontologies/go.owl"
+      update_frequency: "weekly"
+      include_deprecated: false
+
+  # Ontology integration and trimming settings
+  integration:
+    merge_strategy: "union"  # union, intersection, selective
+    conflict_resolution: "priority_based"  # priority_based, manual, automatic
+    trim_unused_classes: true
+    preserve_annotations: true
+    max_depth: 10  # Maximum ontology depth to process
+    min_instances: 2  # Minimum instances required to keep a class
+
 # Feature flags and settings
 features:
   enable_caching: true
@@ -81,23 +120,261 @@ data:
   batch_size: 100
   parallel_processing: true
 
+# Corpus building configuration for literature sources
+corpus:
+  # PubMed configuration
+  pubmed:
+    enabled: true
+    api_key: ""  # Should be set via environment variable AIM2_PUBMED_API_KEY
+    base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+    email: ""  # Required for API access, set via AIM2_PUBMED_EMAIL
+    rate_limit: 10  # requests per second
+    max_records: 10000
+    search_terms:
+      - "plant metabolism"
+      - "chemical compounds plants"
+      - "botanical chemistry"
+      - "phytochemistry"
+    date_range:
+      start: "2010/01/01"
+      end: "2024/12/31"
+
+  # PMC (PubMed Central) configuration
+  pmc:
+    enabled: true
+    base_url: "https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi"
+    rate_limit: 3  # requests per second
+    max_records: 5000
+    full_text: true
+    format: "xml"
+
+  # ArXiv configuration
+  arxiv:
+    enabled: true
+    base_url: "http://export.arxiv.org/api/query"
+    rate_limit: 1  # requests per second
+    max_records: 1000
+    categories:
+      - "q-bio"  # Quantitative Biology
+      - "physics.bio-ph"  # Biological Physics
+    search_terms:
+      - "plant systems biology"
+      - "metabolic networks"
+      - "biochemical pathways"
+
+  # Corpus processing settings
+  processing:
+    language_filter: "en"
+    min_abstract_length: 100
+    remove_duplicates: true
+    text_preprocessing:
+      remove_html: true
+      normalize_unicode: true
+      remove_special_chars: false
+    storage_format: "jsonl"
+    output_directory: "./data/corpus"
+
 # LLM interface configuration
 llm:
-  provider: "openai"  # openai, anthropic, huggingface
+  # Default provider and model
+  provider: "openai"  # openai, anthropic, huggingface, ollama
   model: "gpt-3.5-turbo"
   max_tokens: 2048
   temperature: 0.1
   timeout: 60
   retry_attempts: 3
 
+  # Model-specific configurations
+  models:
+    # OpenAI GPT-4 configuration
+    gpt4:
+      provider: "openai"
+      model_name: "gpt-4-turbo-preview"
+      api_key: ""  # Set via AIM2_OPENAI_API_KEY
+      max_tokens: 4096
+      temperature: 0.1
+      top_p: 0.95
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      timeout: 120
+      use_for:
+        - "complex_reasoning"
+        - "ontology_mapping"
+        - "relationship_extraction"
+
+    # Llama 70B configuration (via Hugging Face or local)
+    llama70b:
+      provider: "huggingface"
+      model_name: "meta-llama/Llama-2-70b-chat-hf"
+      api_key: ""  # Set via AIM2_HUGGINGFACE_API_KEY
+      max_tokens: 2048
+      temperature: 0.2
+      top_p: 0.9
+      repetition_penalty: 1.1
+      timeout: 180
+      use_for:
+        - "text_generation"
+        - "entity_extraction"
+        - "classification"
+
+    # Google Gemma configuration
+    gemma:
+      provider: "huggingface"
+      model_name: "google/gemma-7b-it"
+      api_key: ""  # Set via AIM2_HUGGINGFACE_API_KEY
+      max_tokens: 1024
+      temperature: 0.3
+      top_p: 0.85
+      timeout: 90
+      use_for:
+        - "lightweight_tasks"
+        - "preprocessing"
+        - "validation"
+
+    # Local model configuration (for Ollama or similar)
+    local:
+      provider: "ollama"
+      model_name: "llama2"
+      base_url: "http://localhost:11434"
+      max_tokens: 2048
+      temperature: 0.1
+      timeout: 300
+      use_for:
+        - "development"
+        - "testing"
+
+  # Task-specific model selection
+  task_routing:
+    entity_extraction: "llama70b"
+    relationship_extraction: "gpt4"
+    ontology_mapping: "gpt4"
+    text_classification: "gemma"
+    summarization: "llama70b"
+    validation: "gemma"
+
+# Synthetic data generation configuration
+synthetic_data:
+  enabled: true
+  generators:
+    text_augmentation:
+      method: "llm_based"  # llm_based, rule_based, hybrid
+      model: "gpt4"
+      templates_path: "./data/templates/"
+      augmentation_ratio: 0.3  # 30% synthetic data
+      preserve_semantics: true
+
+    entity_augmentation:
+      method: "ontology_based"
+      source_ontologies:
+        - "chebi"
+        - "plant_ontology"
+      synonym_expansion: true
+      hierarchical_expansion: true
+      max_expansions: 5
+
+    relationship_augmentation:
+      method: "pattern_based"
+      patterns_file: "./data/patterns/relationship_patterns.json"
+      negative_sampling: true
+      negative_ratio: 0.2
+
+  quality_control:
+    human_validation: false
+    confidence_threshold: 0.8
+    diversity_check: true
+    output_format: "jsonl"
+    output_directory: "./data/synthetic/"
+
+# Relationship extraction configuration
+relationship_extraction:
+  # Extraction methods
+  methods:
+    pattern_based:
+      enabled: true
+      patterns_file: "./data/patterns/extraction_patterns.json"
+      confidence_threshold: 0.7
+
+    ml_based:
+      enabled: true
+      model: "bert-base-uncased"
+      fine_tuned_path: "./models/relationship_extractor/"
+      confidence_threshold: 0.8
+
+    llm_based:
+      enabled: true
+      model: "gpt4"
+      prompt_template: "./prompts/relationship_extraction.txt"
+      confidence_threshold: 0.9
+
+  # Relationship types of interest
+  target_relationships:
+    - "is_a"
+    - "part_of"
+    - "has_role"
+    - "participates_in"
+    - "located_in"
+    - "derives_from"
+    - "regulates"
+    - "catalyzes"
+
+  # Post-processing settings
+  post_processing:
+    deduplicate: true
+    validate_ontology: true
+    merge_similar: true
+    similarity_threshold: 0.95
+
+  # Output configuration
+  output:
+    format: "rdf"  # rdf, json, csv
+    include_confidence: true
+    include_provenance: true
+    directory: "./output/relationships/"
+
 # Evaluation and benchmarking
 evaluation:
+  # Standard metrics
   metrics:
     - "precision"
     - "recall"
     - "f1_score"
-  benchmark_datasets: []
+    - "accuracy"
+
+  # Ontology-specific metrics
+  ontology_metrics:
+    - "ontology_precision"    # Precision of ontology mappings
+    - "ontology_recall"       # Recall of ontology mappings
+    - "semantic_similarity"   # Semantic similarity of extracted concepts
+    - "hierarchy_consistency"  # Consistency with ontology hierarchy
+    - "coverage"              # Coverage of domain concepts
+
+  # Benchmark datasets
+  benchmark_datasets:
+    - name: "plant_metabolites"
+      path: "./data/benchmarks/plant_metabolites.json"
+      type: "entity_extraction"
+    - name: "chemical_reactions"
+      path: "./data/benchmarks/chemical_reactions.json"
+      type: "relationship_extraction"
+    - name: "pathway_mapping"
+      path: "./data/benchmarks/pathway_mapping.json"
+      type: "ontology_mapping"
+
+  # Evaluation settings
+  cross_validation:
+    enabled: true
+    folds: 5
+    stratified: true
+
   output_format: "json"
+  output_directory: "./output/evaluation/"
+
+  # Performance tracking
+  tracking:
+    enabled: true
+    log_predictions: true
+    log_errors: true
+    error_analysis: true
 
 # Security settings
 security:
