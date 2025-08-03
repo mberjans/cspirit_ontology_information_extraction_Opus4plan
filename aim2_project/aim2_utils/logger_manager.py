@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 from .rotating_file_handler import create_rotating_file_handler
 from .logger_config import LoggerConfig, LoggerConfigError
 from .colored_console_handler import ColoredConsoleHandler
+from .json_formatter import JSONFormatter
 
 
 class LoggerManagerError(Exception):
@@ -482,8 +483,8 @@ class LoggerManager:
                 raise LoggerManagerError(f"Unsupported handler type: {handler_type}")
 
             if handler:
-                # Set formatter
-                formatter = logging.Formatter(self.config.get_format())
+                # Set formatter based on configured type
+                formatter = self._create_formatter()
                 handler.setFormatter(formatter)
 
                 # Cache the handler
@@ -553,6 +554,43 @@ class LoggerManager:
                 f"Failed to create enhanced rotating file handler for {file_path}: {str(e)}",
                 e,
             )
+
+    def _create_formatter(self) -> logging.Formatter:
+        """
+        Create a logging formatter based on the configured type.
+
+        Returns:
+            logging.Formatter: Configured formatter instance
+
+        Raises:
+            LoggerManagerError: If formatter creation fails
+        """
+        try:
+            formatter_type = self.config.get_formatter_type()
+
+            if formatter_type == "json":
+                # Create JSON formatter with configuration
+                return JSONFormatter(
+                    fields=self.config.get_json_fields(),
+                    pretty_print=self.config.get_json_pretty_print(),
+                    custom_fields=self.config.get_json_custom_fields(),
+                    timestamp_format=self.config.get_json_timestamp_format(),
+                    use_utc=self.config.get_json_use_utc(),
+                    include_exception_traceback=self.config.get_json_include_exception_traceback(),
+                    max_message_length=self.config.get_json_max_message_length(),
+                    field_mapping=self.config.get_json_field_mapping(),
+                    ensure_ascii=self.config.get_json_ensure_ascii(),
+                )
+            elif formatter_type == "standard":
+                # Create standard formatter
+                return logging.Formatter(self.config.get_format())
+            else:
+                raise LoggerManagerError(f"Unsupported formatter type: {formatter_type}")
+
+        except Exception as e:
+            if isinstance(e, LoggerManagerError):
+                raise
+            raise LoggerManagerError(f"Failed to create formatter: {str(e)}", e)
 
     def _cleanup_handlers(self) -> None:
         """Clean up all managed handlers."""

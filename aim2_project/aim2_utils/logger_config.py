@@ -67,6 +67,7 @@ class LoggerConfig:
     DEFAULT_CONFIG = {
         "level": "INFO",
         "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "formatter_type": "standard",
         "handlers": ["console"],
         "file_path": None,
         "max_file_size": "10MB",
@@ -77,6 +78,16 @@ class LoggerConfig:
         "enable_colors": True,
         "color_scheme": "default",
         "force_colors": False,
+        # JSON formatter specific configuration
+        "json_fields": ["timestamp", "level", "logger_name", "message"],
+        "json_pretty_print": False,
+        "json_custom_fields": {},
+        "json_timestamp_format": "iso",
+        "json_use_utc": False,
+        "json_include_exception_traceback": True,
+        "json_max_message_length": None,
+        "json_field_mapping": {},
+        "json_ensure_ascii": False,
     }
 
     # Valid logging levels
@@ -84,6 +95,9 @@ class LoggerConfig:
 
     # Valid handler types
     VALID_HANDLERS = ["console", "file"]
+
+    # Valid formatter types
+    VALID_FORMATTER_TYPES = ["standard", "json"]
 
     # Valid color schemes
     VALID_COLOR_SCHEMES = ["default", "bright", "minimal"]
@@ -202,6 +216,19 @@ class LoggerConfig:
             errors.append("Logging format must be a string")
         elif not format_str.strip():
             errors.append("Logging format cannot be empty")
+
+        # Validate formatter_type
+        formatter_type = config.get("formatter_type", self.DEFAULT_CONFIG["formatter_type"])
+        if not isinstance(formatter_type, str):
+            errors.append("Formatter type must be a string")
+        elif formatter_type not in self.VALID_FORMATTER_TYPES:
+            errors.append(
+                f"Invalid formatter type '{formatter_type}'. Must be one of: {', '.join(self.VALID_FORMATTER_TYPES)}"
+            )
+
+        # Validate JSON formatter specific configuration if JSON formatter is selected
+        if formatter_type == "json":
+            self._validate_json_formatter_config(config, errors)
 
         # Validate handlers
         handlers = config.get("handlers", self.DEFAULT_CONFIG["handlers"])
@@ -330,6 +357,73 @@ class LoggerConfig:
             raise LoggerConfigError(error_msg)
 
         return True
+
+    def _validate_json_formatter_config(self, config: Dict[str, Any], errors: List[str]) -> None:
+        """
+        Validate JSON formatter specific configuration.
+
+        Args:
+            config: Configuration dictionary to validate
+            errors: List to append errors to
+        """
+        # Validate json_fields
+        json_fields = config.get("json_fields", self.DEFAULT_CONFIG["json_fields"])
+        if not isinstance(json_fields, list):
+            errors.append("json_fields must be a list")
+        else:
+            valid_fields = [
+                "timestamp", "level", "level_number", "logger_name", "module", "function",
+                "line_number", "message", "pathname", "filename", "thread", "thread_name",
+                "process", "process_name", "exception", "stack_info", "extra", "custom_fields"
+            ]
+            for field in json_fields:
+                if not isinstance(field, str):
+                    errors.append(f"JSON field '{field}' must be a string")
+                elif field not in valid_fields:
+                    errors.append(f"Invalid JSON field '{field}'. Valid fields: {', '.join(valid_fields)}")
+
+        # Validate json_pretty_print
+        json_pretty_print = config.get("json_pretty_print", self.DEFAULT_CONFIG["json_pretty_print"])
+        if not isinstance(json_pretty_print, bool):
+            errors.append("json_pretty_print must be a boolean")
+
+        # Validate json_custom_fields
+        json_custom_fields = config.get("json_custom_fields", self.DEFAULT_CONFIG["json_custom_fields"])
+        if not isinstance(json_custom_fields, dict):
+            errors.append("json_custom_fields must be a dictionary")
+
+        # Validate json_timestamp_format
+        json_timestamp_format = config.get("json_timestamp_format", self.DEFAULT_CONFIG["json_timestamp_format"])
+        if not isinstance(json_timestamp_format, str):
+            errors.append("json_timestamp_format must be a string")
+        elif json_timestamp_format not in ["iso", "epoch"] and not json_timestamp_format.startswith("%"):
+            errors.append("json_timestamp_format must be 'iso', 'epoch', or a valid strftime format")
+
+        # Validate json_use_utc
+        json_use_utc = config.get("json_use_utc", self.DEFAULT_CONFIG["json_use_utc"])
+        if not isinstance(json_use_utc, bool):
+            errors.append("json_use_utc must be a boolean")
+
+        # Validate json_include_exception_traceback
+        json_include_exception_traceback = config.get("json_include_exception_traceback", self.DEFAULT_CONFIG["json_include_exception_traceback"])
+        if not isinstance(json_include_exception_traceback, bool):
+            errors.append("json_include_exception_traceback must be a boolean")
+
+        # Validate json_max_message_length
+        json_max_message_length = config.get("json_max_message_length", self.DEFAULT_CONFIG["json_max_message_length"])
+        if json_max_message_length is not None:
+            if not isinstance(json_max_message_length, int) or json_max_message_length < 1:
+                errors.append("json_max_message_length must be a positive integer or None")
+
+        # Validate json_field_mapping
+        json_field_mapping = config.get("json_field_mapping", self.DEFAULT_CONFIG["json_field_mapping"])
+        if not isinstance(json_field_mapping, dict):
+            errors.append("json_field_mapping must be a dictionary")
+
+        # Validate json_ensure_ascii
+        json_ensure_ascii = config.get("json_ensure_ascii", self.DEFAULT_CONFIG["json_ensure_ascii"])
+        if not isinstance(json_ensure_ascii, bool):
+            errors.append("json_ensure_ascii must be a boolean")
 
     def get_level(self) -> str:
         """
@@ -470,6 +564,96 @@ class LoggerConfig:
             str: Time specification ("midnight" or "HH:MM" format)
         """
         return self.config["time_when"]
+
+    def get_formatter_type(self) -> str:
+        """
+        Get the formatter type.
+
+        Returns:
+            str: Formatter type ("standard" or "json")
+        """
+        return self.config["formatter_type"]
+
+    def get_json_fields(self) -> List[str]:
+        """
+        Get the JSON formatter fields.
+
+        Returns:
+            List[str]: List of fields to include in JSON output
+        """
+        return self.config["json_fields"].copy()
+
+    def get_json_pretty_print(self) -> bool:
+        """
+        Get whether JSON output should be pretty-printed.
+
+        Returns:
+            bool: True if JSON should be pretty-printed
+        """
+        return self.config["json_pretty_print"]
+
+    def get_json_custom_fields(self) -> Dict[str, Any]:
+        """
+        Get the JSON formatter custom fields.
+
+        Returns:
+            Dict[str, Any]: Custom fields to include in JSON output
+        """
+        return self.config["json_custom_fields"].copy()
+
+    def get_json_timestamp_format(self) -> str:
+        """
+        Get the JSON formatter timestamp format.
+
+        Returns:
+            str: Timestamp format ("iso", "epoch", or strftime format)
+        """
+        return self.config["json_timestamp_format"]
+
+    def get_json_use_utc(self) -> bool:
+        """
+        Get whether JSON formatter should use UTC timestamps.
+
+        Returns:
+            bool: True if UTC timestamps should be used
+        """
+        return self.config["json_use_utc"]
+
+    def get_json_include_exception_traceback(self) -> bool:
+        """
+        Get whether JSON formatter should include exception tracebacks.
+
+        Returns:
+            bool: True if exception tracebacks should be included
+        """
+        return self.config["json_include_exception_traceback"]
+
+    def get_json_max_message_length(self) -> Optional[int]:
+        """
+        Get the JSON formatter maximum message length.
+
+        Returns:
+            Optional[int]: Maximum message length or None for no limit
+        """
+        return self.config["json_max_message_length"]
+
+    def get_json_field_mapping(self) -> Dict[str, str]:
+        """
+        Get the JSON formatter field mapping.
+
+        Returns:
+            Dict[str, str]: Field name mapping
+        """
+        return self.config["json_field_mapping"].copy()
+
+    def get_json_ensure_ascii(self) -> bool:
+        """
+        Get whether JSON formatter should ensure ASCII output.
+
+        Returns:
+            bool: True if ASCII-only output should be ensured
+        """
+        return self.config["json_ensure_ascii"]
 
     def update_config(self, updates: Dict[str, Any]) -> None:
         """
