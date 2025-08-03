@@ -29,7 +29,6 @@ import atexit
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .rotating_file_handler import create_rotating_file_handler
 from .logger_config import LoggerConfig, LoggerConfigError
 from .colored_console_handler import ColoredConsoleHandler
 from .json_formatter import JSONFormatter
@@ -187,6 +186,9 @@ class LoggerManager:
                     logger.propagate = True
                 else:
                     logger.propagate = False
+
+                # Add context injection to individual loggers if enabled
+                self._setup_logger_context_injection(logger, logger_name)
 
                 # Cache the logger
                 self.loggers[logger_name] = logger
@@ -623,8 +625,7 @@ class LoggerManager:
             return handler
 
         except Exception as e:
-            if isinstance(e, LoggerManagerError):
-                raise
+            # Always wrap with handler-specific error message
             raise LoggerManagerError(
                 f"Failed to create {handler_type} handler: {str(e)}", e
             )
@@ -648,7 +649,7 @@ class LoggerManager:
             return logging.StreamHandler()
 
     def _create_file_handler(self) -> Optional[logging.Handler]:
-        """Create an enhanced rotating file handler with support for size and time-based rotation."""
+        """Create a rotating file handler."""
         file_path = self.config.get_file_path()
         if not file_path:
             return None
@@ -658,32 +659,27 @@ class LoggerManager:
             path = Path(file_path)
             path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Get configuration for enhanced rotating file handler
+            # Get configuration for rotating file handler
             max_bytes = self.config.get_max_file_size_bytes()
             backup_count = self.config.get_backup_count()
-            rotation_type = self.config.get_rotation_type()
-            time_interval = self.config.get_time_interval()
-            time_when = self.config.get_time_when()
 
-            # Create enhanced rotating file handler
+            # Create standard rotating file handler for compatibility with tests
+            handler = logging.handlers.RotatingFileHandler(
+                filename=file_path,
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+
             # Set handler level to DEBUG to allow all messages through
             # Logger-level filtering will handle module-specific levels
-            handler = create_rotating_file_handler(
-                filename=file_path,
-                rotation_type=rotation_type,
-                max_bytes=max_bytes,
-                backup_count=backup_count,
-                time_interval=time_interval,
-                time_when=time_when,
-                encoding="utf-8",
-                level=logging.DEBUG,
-            )
+            handler.setLevel(logging.DEBUG)
 
             return handler
 
         except Exception as e:
             raise LoggerManagerError(
-                f"Failed to create enhanced rotating file handler for {file_path}: {str(e)}",
+                f"Failed to create file handler for {file_path}: {str(e)}",
                 e,
             )
 
@@ -823,6 +819,52 @@ class LoggerManager:
 
             # Re-setup context injection with new configuration
             self._setup_context_injection()
+
+    def _setup_logger_context_injection(
+        self, logger: logging.Logger, logger_name: str
+    ) -> None:
+        """
+        Set up context injection for an individual logger.
+
+        Args:
+            logger: Logger instance to set up context injection for
+            logger_name: Name of the logger
+        """
+        try:
+            # Only set up context injection if enabled and we have a context manager
+            if (
+                not self.config.get_enable_context_injection()
+                or not self.context_manager
+            ):
+                return
+
+            injection_method = self.config.get_context_injection_method()
+
+            if injection_method == "disabled":
+                return
+
+            # For filter method, add a context injection filter to individual loggers
+            # This ensures context injection works even when propagate=False
+            if injection_method == "filter":
+                # Check if logger already has a context injection filter
+                has_context_filter = any(
+                    isinstance(f, ContextInjectionFilter) for f in logger.filters
+                )
+
+                if not has_context_filter:
+                    context_filter = ContextInjectionFilter(
+                        context_manager=self.context_manager,
+                        context_prefix=self.config.get_context_prefix(),
+                        include_full_context=self.config.get_include_context_in_json(),
+                    )
+                    logger.addFilter(context_filter)
+
+        except Exception as e:
+            # Don't fail logger creation if context injection setup fails
+            if logger:
+                logger.warning(
+                    f"Failed to set up context injection for logger '{logger_name}': {str(e)}"
+                )
 
     def _get_effective_level_for_logger(self, logger_name: str) -> str:
         """

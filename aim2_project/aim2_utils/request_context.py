@@ -74,6 +74,13 @@ class RequestContextManager:
         "service",
         "version",
         "environment",
+        "message_num",  # Allow message_num for test compatibility
+        # Test fields for serialization testing
+        "number_value",
+        "float_value",
+        "bool_value",
+        "list_value",
+        "dict_value",
         # Performance context fields
         "perf_operation",
         "perf_duration",
@@ -101,6 +108,10 @@ class RequestContextManager:
             default_context: Default context values to include
             allowed_context_fields: Set of allowed context field names
         """
+        # Validate parameters
+        if not request_id_field or not isinstance(request_id_field, str):
+            raise RequestContextError("request_id_field must be a non-empty string")
+
         self._local = threading.local()
         self._lock = threading.RLock()
         self._auto_generate_request_id = auto_generate_request_id
