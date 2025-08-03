@@ -21,7 +21,7 @@
 - [x] **AIM2-002-02** Create requirements.txt with core dependencies
 - [x] **AIM2-002-03** Create requirements-dev.txt for development tools
 - [x] **AIM2-002-04** Write setup.py with package metadata
-- [ ] **AIM2-002-05** Create setup.cfg for tool configurations
+- [x] **AIM2-002-05** Create setup.cfg for tool configurations
 - [ ] **AIM2-002-06** Write Makefile for common commands
 - [ ] **AIM2-002-07** Create virtual environment setup script
 - [ ] **AIM2-002-08** Add pre-commit hooks configuration
