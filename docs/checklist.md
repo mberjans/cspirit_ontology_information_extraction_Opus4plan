@@ -71,7 +71,7 @@
 - [x] **AIM2-011-09** Add term indexing functionality
 - [x] **AIM2-011-10** Implement serialization to JSON
 - [x] **AIM2-011-11** Implement deserialization from JSON
-- [ ] **AIM2-011-12** Add equality and hashing methods
+- [x] **AIM2-011-12** Add equality and hashing methods
 - [ ] **AIM2-011-13** Create string representations
 - [ ] **AIM2-011-14** Run all model unit tests
 - [ ] **AIM2-012-01** Write unit tests for OWL parser
