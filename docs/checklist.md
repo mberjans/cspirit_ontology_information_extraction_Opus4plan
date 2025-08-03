@@ -29,7 +29,7 @@
 - [x] **AIM2-003-02** Write unit tests for config validator
 - [x] **AIM2-003-03** Create ConfigManager class skeleton
 - [x] **AIM2-003-04** Implement YAML file loading
-- [ ] **AIM2-003-05** Implement JSON file loading support
+- [x] **AIM2-003-05** Implement JSON file loading support
 - [ ] **AIM2-003-06** Add environment variable override logic
 - [ ] **AIM2-003-07** Create config schema validator
 - [ ] **AIM2-003-08** Implement config merging functionality
