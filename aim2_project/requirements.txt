@@ -1,0 +1,31 @@
+# AIM2 Ontology Information Extraction Project Dependencies
+# Core requirements for LLM interfaces, ontology processing, NER extraction, and document parsing
+
+# Machine Learning and NLP Libraries
+transformers>=4.30.0
+torch>=2.0.0
+spacy>=3.5.0
+scikit-learn>=1.3.0
+sentence-transformers>=2.2.0
+langchain>=0.0.200
+
+# Ontology and Knowledge Graph Libraries
+owlready2>=0.40
+networkx>=3.0
+rdflib>=6.3.0
+
+# Data Processing and Analysis
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Configuration and Utilities
+pyyaml>=6.0
+requests>=2.31.0
+
+# Scientific and Chemical Libraries
+biopython>=1.81
+pubchempy>=1.0.4
+
+# Document Processing
+lxml>=4.9.0
+pypdf>=3.12.0
