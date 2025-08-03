@@ -73,7 +73,7 @@
 - [x] **AIM2-011-11** Implement deserialization from JSON
 - [x] **AIM2-011-12** Add equality and hashing methods
 - [x] **AIM2-011-13** Create string representations
-- [ ] **AIM2-011-14** Run all model unit tests
+- [x] **AIM2-011-14** Run all model unit tests
 - [ ] **AIM2-012-01** Write unit tests for OWL parser
 - [ ] **AIM2-012-02** Write unit tests for CSV parser
 - [ ] **AIM2-012-03** Write unit tests for JSON-LD parser

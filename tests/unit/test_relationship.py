@@ -249,8 +249,11 @@ class TestRelationshipValidation:
             mock_instance = Mock()
             # Fix mock validation to match regex pattern ^[A-Za-z]+:\d+$
             mock_instance.validate_id_format.side_effect = (
-                lambda x: x is not None and ":" in x and len(x.split(":")) == 2 
-                and x.split(":")[0].isalpha() and x.split(":")[1].isdigit()
+                lambda x: x is not None
+                and ":" in x
+                and len(x.split(":")) == 2
+                and x.split(":")[0].isalpha()
+                and x.split(":")[1].isdigit()
             )
             MockRelationship.return_value = mock_instance
 
@@ -633,7 +636,9 @@ class TestRelationshipEquality:
 
             # Configure equality so rel1 and rel3 are equal
             rel1.__eq__ = Mock(side_effect=lambda other: other is rel3)
-            rel2.__eq__ = Mock(side_effect=lambda other: other is not rel1 and other is not rel3)
+            rel2.__eq__ = Mock(
+                side_effect=lambda other: other is not rel1 and other is not rel3
+            )
             rel3.__eq__ = Mock(side_effect=lambda other: other is rel1)
 
             rel_set = {rel1, rel2, rel3}
