@@ -203,10 +203,10 @@ The test suite extensively uses mocking to avoid side effects:
 def test_python_version_check(mock_subprocess):
     mock_subprocess.return_value.returncode = 0
     mock_subprocess.return_value.stdout = "Python 3.9.5"
-    
+
     setup = VirtualEnvSetup(mock_args)
     result = setup.check_python_version()
-    
+
     assert result is True
 ```
 
@@ -342,10 +342,10 @@ def test_new_functionality(self, setup_instance):
     """Test new functionality in setup_env.py."""
     # Arrange
     test_input = "test_value"
-    
+
     # Act
     result = setup_instance.new_method(test_input)
-    
+
     # Assert
     assert result is not None
     assert result.status == "success"

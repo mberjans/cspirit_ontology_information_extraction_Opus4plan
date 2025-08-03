@@ -237,7 +237,7 @@ pytest tests/test_setup_env.py::TestColors -v
 - **Total test methods**: 50+
 - **Test classes**: 15+
 - **Lines of test code**: 1,200+
-- **Estimated execution time**: 
+- **Estimated execution time**:
   - Quick tests: ~30 seconds
   - Full suite: ~2-5 minutes
 

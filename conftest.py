@@ -5,10 +5,7 @@ This module provides common fixtures, test utilities, and configuration
 for all setup.py related tests.
 """
 
-import os
-import sys
 import tempfile
-import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
@@ -17,12 +14,8 @@ import pytest
 # Test configuration
 def pytest_configure(config):
     """Configure pytest with custom markers and settings."""
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line(
         "markers", "requires_network: mark test as requiring network access"
     )
@@ -34,9 +27,11 @@ def pytest_collection_modifyitems(config, items):
         # Mark integration tests
         if "integration" in str(item.fspath):
             item.add_marker(pytest.mark.integration)
-        
+
         # Mark tests that install packages as slow
-        if any(keyword in item.name.lower() for keyword in ["install", "build", "wheel"]):
+        if any(
+            keyword in item.name.lower() for keyword in ["install", "build", "wheel"]
+        ):
             item.add_marker(pytest.mark.slow)
 
 
@@ -56,7 +51,7 @@ def aim2_project_dir(project_root):
 @pytest.fixture
 def mock_setup_py_content():
     """Mock content for setup.py file."""
-    return '''
+    return """
 from setuptools import setup, find_packages
 
 setup(
@@ -134,7 +129,7 @@ setup(
         "Topic :: Text Processing :: Linguistic",
     ],
 )
-'''
+"""
 
 
 @pytest.fixture
@@ -142,56 +137,58 @@ def temp_project_structure():
     """Create a temporary project structure for testing."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        
+
         # Create project structure
         project_dir = temp_path / "test_project"
         project_dir.mkdir()
-        
+
         # Create aim2_project package
         aim2_dir = project_dir / "aim2_project"
         aim2_dir.mkdir()
         (aim2_dir / "__init__.py").write_text("__version__ = '0.1.0'")
-        
+
         # Create subpackages
         for subpackage in ["aim2_ontology", "aim2_extraction", "aim2_utils", "data"]:
             subpkg_dir = aim2_dir / subpackage
             subpkg_dir.mkdir()
             (subpkg_dir / "__init__.py").write_text("")
-        
+
         # Create configs directory
         configs_dir = aim2_dir / "configs"
         configs_dir.mkdir()
         (configs_dir / "default_config.yaml").write_text("# Default configuration")
-        
+
         # Create data subdirectories
         data_dir = aim2_dir / "data"
         for data_subdir in ["ontologies", "benchmarks"]:
             (data_dir / data_subdir).mkdir()
-        
+
         # Create sample files
         (data_dir / "ontologies" / "sample.owl").write_text("<!-- Sample OWL file -->")
         (data_dir / "benchmarks" / "sample.json").write_text('{"sample": "data"}')
-        
+
         # Create requirements.txt
-        (project_dir / "requirements.txt").write_text("""
+        (project_dir / "requirements.txt").write_text(
+            """
 numpy>=1.21.0
 pandas>=1.3.0
 scikit-learn>=1.0.0
-""".strip())
-        
+""".strip()
+        )
+
         # Create README
         (project_dir / "README.md").write_text("# Test Project")
-        
+
         # Create LICENSE
         (project_dir / "LICENSE").write_text("MIT License")
-        
+
         yield project_dir
 
 
 @pytest.fixture
 def mock_subprocess():
     """Mock subprocess calls for testing."""
-    with patch('subprocess.run') as mock_run:
+    with patch("subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = "Success"
         mock_run.return_value.stderr = ""
@@ -208,20 +205,20 @@ def mock_pkg_resources():
         "transformers": Mock(version="4.20.1"),
         "spacy": Mock(version="3.4.1"),
     }
-    
+
     def mock_get_distribution(package_name):
         if package_name in mock_distributions:
             return mock_distributions[package_name]
         raise pkg_resources.DistributionNotFound()
-    
-    with patch('pkg_resources.get_distribution', side_effect=mock_get_distribution):
+
+    with patch("pkg_resources.get_distribution", side_effect=mock_get_distribution):
         yield mock_distributions
 
 
 @pytest.fixture
 def mock_setuptools():
     """Mock setuptools.setup for testing."""
-    with patch('setuptools.setup') as mock_setup:
+    with patch("setuptools.setup") as mock_setup:
         mock_setup.return_value = None
         yield mock_setup
 
@@ -267,7 +264,7 @@ def sample_extras_require():
             "pytest>=7.0.0",
             "pytest-cov>=3.0.0",
             "pytest-mock>=3.7.0",
-        ]
+        ],
     }
 
 
@@ -306,42 +303,42 @@ def sample_classifiers():
 # Test utilities
 class TestUtilities:
     """Utility functions for testing setup.py functionality."""
-    
+
     @staticmethod
     def create_mock_setup_py(content: str, target_dir: Path) -> Path:
         """Create a mock setup.py file with given content."""
         setup_py = target_dir / "setup.py"
         setup_py.write_text(content)
         return setup_py
-    
+
     @staticmethod
     def validate_package_structure(package_dir: Path) -> bool:
         """Validate that package has proper structure."""
         required_files = [
             "__init__.py",
         ]
-        
+
         for file_name in required_files:
             if not (package_dir / file_name).exists():
                 return False
-        
+
         return True
-    
+
     @staticmethod
     def parse_requirements_file(requirements_file: Path) -> list:
         """Parse a requirements.txt file."""
         if not requirements_file.exists():
             return []
-        
-        with open(requirements_file, 'r') as f:
+
+        with open(requirements_file, "r") as f:
             lines = f.readlines()
-        
+
         requirements = []
         for line in lines:
             line = line.strip()
-            if line and not line.startswith('#'):
+            if line and not line.startswith("#"):
                 requirements.append(line)
-        
+
         return requirements
 
 

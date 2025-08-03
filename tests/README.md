@@ -211,23 +211,23 @@ When adding new tests for setup.py functionality:
 ```python
 class TestNewFeature:
     """Test new setup.py feature."""
-    
+
     def test_feature_basic_functionality(self):
         """Test that feature works in basic case."""
         # Arrange
         expected_value = "expected"
-        
+
         # Act
         result = function_under_test()
-        
+
         # Assert
         assert result == expected_value
-    
+
     def test_feature_edge_case(self):
         """Test feature handles edge case correctly."""
         # Test implementation
         pass
-    
+
     @pytest.mark.slow
     def test_feature_integration(self):
         """Test feature in integration scenario."""

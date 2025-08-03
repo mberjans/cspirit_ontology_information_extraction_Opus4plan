@@ -110,7 +110,7 @@
 
 ### 1. LLM Interface Bottleneck (AIM2-051)
 **Risk**: 11 tickets depend on this  
-**Mitigation**: 
+**Mitigation**:
 - Prioritize in Sprint 2
 - Create mock interface for parallel development
 - Consider pair programming

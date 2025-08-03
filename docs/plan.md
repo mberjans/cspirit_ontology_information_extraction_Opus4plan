@@ -47,13 +47,13 @@ Can be run standalone: python -m aim2_ontology.ontology_manager
 class OntologyManager:
     def __init__(self, config_path=None):
         """Initialize with configuration for ontology sources"""
-        
+
     def load_ontologies(self):
         """Load multiple ontology sources (ChEBI, ChemOnt, PMN, etc.)"""
-        
+
     def get_ontology_statistics(self):
         """Generate statistics about loaded ontologies"""
-        
+
     def export_combined_ontology(self, format='owl'):
         """Export the integrated ontology in specified format"""
 
@@ -75,13 +75,13 @@ Uses LLMs to identify relevant terms and prune large ontologies.
 class OntologyTrimmer:
     def __init__(self, llm_interface):
         """Initialize with LLM interface for intelligent trimming"""
-        
+
     def auto_trim_ontology(self, ontology, target_size=None):
         """Use LLM to identify most relevant terms"""
-        
+
     def filter_by_relevance_score(self, terms, threshold=0.7):
         """Score terms using LLM and filter by relevance"""
-        
+
     def generate_trimming_rules(self, sample_terms):
         """LLM generates rules for automated trimming"""
 
@@ -104,16 +104,16 @@ class OntologyIntegrator:
         self.structural_sources = ['chemont', 'np_classifier', 'pmn']
         self.source_sources = ['plant_ontology', 'ncbi_taxonomy', 'peco']
         self.functional_sources = ['go', 'trait_ontology', 'chemfont']
-        
+
     def integrate_structural_annotations(self, ontologies):
         """Merge structural annotation ontologies"""
-        
+
     def integrate_source_annotations(self, ontologies):
         """Merge source annotation ontologies"""
-        
+
     def integrate_functional_annotations(self, ontologies):
         """Merge functional annotation ontologies"""
-        
+
     def resolve_conflicts(self, conflicts):
         """Use LLM to resolve ontology conflicts"""
 
@@ -135,16 +135,16 @@ class RelationshipManager:
             'is_a', 'made_via', 'accumulates_in', 'affects',
             'involved_in', 'upregulates', 'downregulates'
         ]
-        
+
     def add_relationship(self, subject, predicate, object):
         """Add a new relationship triple"""
-        
+
     def infer_relationships(self, terms):
         """Use LLM to infer missing relationships"""
-        
+
     def validate_relationship_consistency(self):
         """Check for logical inconsistencies"""
-        
+
     def export_relationship_graph(self, format='networkx'):
         """Export relationships as graph structure"""
 
@@ -167,16 +167,16 @@ class CorpusBuilder:
     def __init__(self, sources=['pubmed', 'pmc', 'arxiv']):
         self.sources = sources
         self.synthetic_generator = SyntheticDataGenerator()
-        
+
     def search_and_download(self, keywords, limit=1000):
         """Search and download papers from configured sources"""
-        
+
     def generate_synthetic_papers(self, n_papers=100):
         """Generate synthetic papers for testing/training"""
-        
+
     def parse_documents(self, doc_paths):
         """Parse various document formats (PDF, XML, etc.)"""
-        
+
     def create_balanced_corpus(self, topics):
         """Create corpus balanced across different topics"""
 
@@ -200,16 +200,16 @@ class NERExtractor:
             'species', 'anatomical_structure', 'experimental_condition',
             'molecular_trait', 'plant_trait', 'human_trait'
         ]
-        
+
     def extract_entities_llm(self, text, model='llama-70b'):
         """Extract entities using LLM with optimized prompts"""
-        
+
     def extract_entities_bert(self, text, model='cybert'):
         """Extract entities using fine-tuned BERT models"""
-        
+
     def ensemble_extraction(self, text):
         """Combine multiple models for better accuracy"""
-        
+
     def post_process_entities(self, entities):
         """Normalize and deduplicate extracted entities"""
 
@@ -230,16 +230,16 @@ class RelationshipExtractor:
     def __init__(self, llm_interface):
         self.llm = llm_interface
         self.relationship_templates = self.load_templates()
-        
+
     def extract_relationships(self, text, entities):
         """Extract relationships using sophisticated prompting"""
-        
+
     def handle_hierarchical_relationships(self, relationships):
         """Process relationships with different specificity levels"""
-        
+
     def validate_relationships(self, relationships, ontology):
         """Validate extracted relationships against ontology"""
-        
+
     def generate_relationship_prompts(self, context_window=2000):
         """Generate optimal prompts for relationship extraction"""
 
@@ -259,16 +259,16 @@ Includes synthetic gold standard generation.
 class EvaluationBenchmarker:
     def __init__(self):
         self.metrics = ['precision', 'recall', 'f1', 'accuracy']
-        
+
     def generate_gold_standard(self, n_papers=25):
         """Use LLM to create synthetic gold standard annotations"""
-        
+
     def benchmark_models(self, models, test_set):
         """Compare performance of different extraction models"""
-        
+
     def calculate_metrics(self, predictions, gold_standard):
         """Calculate standard evaluation metrics"""
-        
+
     def generate_evaluation_report(self, results):
         """Create comprehensive evaluation report"""
 
@@ -292,16 +292,16 @@ class LLMInterface:
     def __init__(self, model='llama-70b', local=True):
         self.model = model
         self.prompt_optimizer = PromptOptimizer()
-        
+
     def generate(self, prompt, max_tokens=2000):
         """Generate response from LLM"""
-        
+
     def structured_extraction(self, text, schema):
         """Extract structured data using schema-guided prompting"""
-        
+
     def batch_process(self, texts, operation):
         """Process multiple texts efficiently"""
-        
+
     def optimize_prompt(self, task, examples):
         """Automatically optimize prompts for specific tasks"""
 ```
@@ -318,16 +318,16 @@ class SyntheticDataGenerator:
     def __init__(self, ontology, llm_interface):
         self.ontology = ontology
         self.llm = llm_interface
-        
+
     def generate_annotated_papers(self, n_papers, topics):
         """Generate fully annotated synthetic papers"""
-        
+
     def generate_entity_examples(self, entity_type, n_examples):
         """Generate examples of specific entity types"""
-        
+
     def generate_relationship_examples(self, relationship_type):
         """Generate examples of specific relationships"""
-        
+
     def augment_real_data(self, real_data, augmentation_factor=3):
         """Augment real data with synthetic variations"""
 ```

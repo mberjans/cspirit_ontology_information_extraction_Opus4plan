@@ -11,13 +11,13 @@ graph TD
     AIM2-001 --> AIM2-003[Config Management]
     AIM2-003 --> AIM2-004[Logging Framework]
     AIM2-003 --> AIM2-051[LLM Interface]
-    
+
     %% LLM Layer
     AIM2-051 --> AIM2-052[Local LLM]
     AIM2-051 --> AIM2-053[Cloud LLM]
     AIM2-051 --> AIM2-054[Prompt Optimization]
     AIM2-051 --> AIM2-055[Synthetic Data Gen]
-    
+
     %% Ontology Development Path
     AIM2-011[Ontology Models] --> AIM2-012[Ontology Parser]
     AIM2-011 --> AIM2-018[Relationship Manager]
@@ -31,7 +31,7 @@ graph TD
     AIM2-051 --> AIM2-017
     AIM2-018 --> AIM2-019[Relationship Inference]
     AIM2-051 --> AIM2-019
-    
+
     %% Information Extraction Path
     AIM2-031[Document Parser] --> AIM2-032[Corpus Builder]
     AIM2-032 --> AIM2-033[PubMed Integration]
@@ -47,13 +47,13 @@ graph TD
     AIM2-051 --> AIM2-041
     AIM2-039 --> AIM2-042[Ontology Mapping]
     AIM2-013 --> AIM2-042
-    
+
     %% Evaluation Path
     AIM2-055 --> AIM2-043[Benchmark Generator]
     AIM2-034 --> AIM2-043
     AIM2-044[Evaluation Metrics] --> AIM2-045[Benchmarking System]
     AIM2-043 --> AIM2-045
-    
+
     %% Integration Layer
     AIM2-013 --> AIM2-061[Pipeline Integration]
     AIM2-032 --> AIM2-061
@@ -66,7 +66,7 @@ graph TD
     AIM2-043 --> AIM2-067[Validation Data]
     AIM2-065 --> AIM2-068[Deployment]
     AIM2-061 --> AIM2-069[Examples]
-    
+
     %% Final Testing
     AIM2-063 --> AIM2-070[Final Testing]
     AIM2-064 --> AIM2-070
@@ -75,7 +75,7 @@ graph TD
     AIM2-067 --> AIM2-070
     AIM2-068 --> AIM2-070
     AIM2-069 --> AIM2-070
-    
+
     style AIM2-001 fill:#90EE90
     style AIM2-002 fill:#90EE90
     style AIM2-003 fill:#FFD700

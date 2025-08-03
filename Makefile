@@ -311,6 +311,79 @@ test-clean: ## Testing - Clean test artifacts
 	$(call log_success,"Test artifacts cleaned")
 
 # ====================================================================
+# Clean Environment Testing (AIM2-002-10)
+# ====================================================================
+.PHONY: test-clean-env
+test-clean-env: ## Testing - Run clean environment installation tests (quick)
+	$(call check_venv)
+	$(call log_info,"Running clean environment installation tests - quick mode...")
+	$(PYTHON) run_clean_env_tests.py --quick --verbose
+	$(call log_success,"Clean environment tests passed")
+
+.PHONY: test-clean-env-full
+test-clean-env-full: ## Testing - Run comprehensive clean environment tests
+	$(call check_venv)
+	$(call log_info,"Running comprehensive clean environment tests...")
+	$(PYTHON) run_clean_env_tests.py --full --verbose --coverage --html-report
+	$(call log_success,"Comprehensive clean environment tests passed")
+
+.PHONY: test-clean-venv
+test-clean-venv: ## Testing - Test virtual environment creation in clean environment
+	$(call check_venv)
+	$(call log_info,"Testing clean virtual environment creation...")
+	$(PYTHON) run_clean_env_tests.py --venv-only --verbose
+	$(call log_success,"Clean venv creation tests passed")
+
+.PHONY: test-clean-install
+test-clean-install: ## Testing - Test package installation in clean environment
+	$(call check_venv)
+	$(call log_info,"Testing package installation in clean environment...")
+	$(PYTHON) run_clean_env_tests.py --install-only --verbose
+	$(call log_success,"Clean installation tests passed")
+
+.PHONY: test-clean-cross-platform
+test-clean-cross-platform: ## Testing - Test cross-platform compatibility in clean environment
+	$(call check_venv)
+	$(call log_info,"Testing cross-platform compatibility...")
+	$(PYTHON) run_clean_env_tests.py --cross-platform --verbose
+	$(call log_success,"Cross-platform compatibility tests passed")
+
+.PHONY: test-clean-precommit
+test-clean-precommit: ## Testing - Test pre-commit hooks setup in clean environment
+	$(call check_venv)
+	$(call log_info,"Testing pre-commit hooks setup...")
+	$(PYTHON) run_clean_env_tests.py --precommit --verbose
+	$(call log_success,"Pre-commit hooks tests passed")
+
+.PHONY: test-clean-env-parallel
+test-clean-env-parallel: ## Testing - Run clean environment tests in parallel
+	$(call check_venv)
+	$(call log_info,"Running clean environment tests in parallel...")
+	$(PYTHON) run_clean_env_tests.py --quick --parallel --verbose
+	$(call log_success,"Parallel clean environment tests passed")
+
+.PHONY: test-clean-env-coverage
+test-clean-env-coverage: ## Testing - Run clean environment tests with coverage
+	$(call check_venv)
+	$(call log_info,"Running clean environment tests with coverage...")
+	$(PYTHON) run_clean_env_tests.py --full --coverage --html-report --verbose
+	$(call log_success,"Clean environment tests with coverage completed")
+
+.PHONY: test-clean-env-debug
+test-clean-env-debug: ## Testing - Run clean environment tests with debugging artifacts
+	$(call check_venv)
+	$(call log_info,"Running clean environment tests with debugging...")
+	$(PYTHON) run_clean_env_tests.py --quick --verbose --keep-artifacts --json-output clean_env_debug.json
+	$(call log_success,"Clean environment debug tests completed")
+
+.PHONY: test-clean-env-report
+test-clean-env-report: ## Testing - Generate clean environment test report
+	$(call check_venv)
+	$(call log_info,"Generating clean environment test report...")
+	$(PYTHON) run_clean_env_tests.py --full --coverage --html-report --json-output clean_env_report.json --text-report clean_env_report.txt
+	$(call log_success,"Clean environment test report generated")
+
+# ====================================================================
 # Build and Package
 # ====================================================================
 .PHONY: build
@@ -655,6 +728,9 @@ all-clean: clean test-clean docs-clean ## Clean all build artifacts and caches
 .PHONY: format format-check lint lint-flake8 lint-pylint security typecheck quality
 .PHONY: test test-unit test-integration test-fast test-slow test-verbose test-parallel
 .PHONY: coverage-report coverage-view test-clean
+.PHONY: test-clean-env test-clean-env-full test-clean-venv test-clean-install
+.PHONY: test-clean-cross-platform test-clean-precommit test-clean-env-parallel
+.PHONY: test-clean-env-coverage test-clean-env-debug test-clean-env-report
 .PHONY: build wheel sdist install-local install-editable check-package clean
 .PHONY: docs docs-clean docs-view docs-serve docs-linkcheck
 .PHONY: run-ontology-manager run-ner-extractor run-corpus-builder run-relationship-extractor run-evaluation-benchmarker run-synthetic-generator

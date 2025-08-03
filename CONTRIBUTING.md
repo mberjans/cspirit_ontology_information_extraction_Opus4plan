@@ -149,19 +149,19 @@ def trim_ontology(
     relevance_threshold: float = 0.7
 ) -> Ontology:
     """Trim ontology using AI-assisted relevance scoring.
-    
+
     Args:
         ontology: Source ontology to trim
         target_size: Desired number of terms in trimmed ontology
         relevance_threshold: Minimum relevance score for term inclusion
-        
+
     Returns:
         Trimmed ontology with reduced term count
-        
+
     Raises:
         ValueError: If target_size is larger than source ontology
         LLMError: If language model fails to provide relevance scores
-        
+
     Example:
         >>> manager = OntologyManager()
         >>> ontology = manager.load_ontology("chebi.owl")
@@ -226,16 +226,16 @@ class TestLLMInterface:
     def llm_interface(self):
         config = {"model": "test-model", "api_key": "test-key"}
         return LLMInterface(config)
-    
+
     @patch('aim2_utils.llm_interface.requests.post')
     def test_generate_response_success(self, mock_post, llm_interface):
         # Arrange
         mock_post.return_value.json.return_value = {"response": "test output"}
         mock_post.return_value.status_code = 200
-        
+
         # Act
         result = llm_interface.generate_response("test prompt")
-        
+
         # Assert
         assert result == "test output"
         mock_post.assert_called_once()
@@ -253,11 +253,11 @@ def test_ontology_trimming_workflow():
     # Use small test ontology
     test_ontology_path = "tests/fixtures/small_chebi.owl"
     manager = OntologyManager()
-    
+
     # Load, trim, and validate
     ontology = manager.load_ontology(test_ontology_path)
     trimmed = manager.trim_ontology(ontology, target_size=10)
-    
+
     assert len(trimmed.terms) <= 10
     assert all(term.relevance_score >= 0.7 for term in trimmed.terms)
 ```
@@ -508,11 +508,11 @@ We are committed to providing a welcoming and inclusive environment:
 ```python
 class OntologyManager:
     """Main coordinator for ontology operations."""
-    
+
     def __init__(self, config_path: str):
         self.config = self._load_config(config_path)
         self.cache = {}
-        
+
     def load_ontology(self, source: Union[str, Path]) -> Ontology:
         """Load ontology with automatic format detection."""
         # Implement format detection logic
@@ -536,9 +536,9 @@ class OntologyManager:
 ```python
 class NERExtractor:
     """Multi-model entity recognition."""
-    
+
     def extract_entities_ensemble(
-        self, 
+        self,
         text: str,
         models: List[str] = ["bert", "llm"]
     ) -> List[Entity]:
@@ -559,12 +559,12 @@ class NERExtractor:
 ```python
 class LLMInterface:
     """Unified interface for LLM providers."""
-    
+
     def __init__(self, provider: str, **kwargs):
         self.provider = self._initialize_provider(provider, **kwargs)
         self.rate_limiter = RateLimiter()
         self.cache = ResponseCache()
-        
+
     async def generate_response(
         self,
         prompt: str,
