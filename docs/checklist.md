@@ -50,13 +50,13 @@
 - [x] **AIM2-004-11** Test log rotation functionality
 - [x] **AIM2-004-12** Run all logging unit tests
 - [x] **AIM2-005-01** Write unit tests for exception hierarchy
-- [ ] **AIM2-005-02** Create AIM2Exception base class
-- [ ] **AIM2-005-03** Add error code system design
-- [ ] **AIM2-005-04** Create OntologyException subclass
-- [ ] **AIM2-005-05** Create ExtractionException subclass
-- [ ] **AIM2-005-06** Create LLMException subclass
-- [ ] **AIM2-005-07** Create ValidationException subclass
-- [ ] **AIM2-005-08** Add exception serialization methods
+- [x] **AIM2-005-02** Create AIM2Exception base class
+- [x] **AIM2-005-03** Add error code system design
+- [x] **AIM2-005-04** Create OntologyException subclass
+- [x] **AIM2-005-05** Create ExtractionException subclass
+- [x] **AIM2-005-06** Create LLMException subclass
+- [x] **AIM2-005-07** Create ValidationException subclass
+- [x] **AIM2-005-08** Add exception serialization methods
 - [ ] **AIM2-005-09** Create error message templates
 - [ ] **AIM2-005-10** Document exception usage guidelines
 - [ ] **AIM2-005-11** Run exception handling unit tests
