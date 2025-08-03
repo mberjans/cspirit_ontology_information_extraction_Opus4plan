@@ -1,0 +1,106 @@
+# AIM2 Project Default Configuration
+# This is the default configuration file for the AIM2 Ontology Information Extraction project
+# Environment variables with prefix AIM2_ can override these values
+
+# Project metadata
+project:
+  name: "AIM2 Ontology Information Extraction"
+  version: "1.0.0"
+  description: "Comprehensive ontology information extraction system"
+
+# Database configuration
+database:
+  host: localhost
+  port: 5432
+  name: aim2_db
+  username: aim2_user
+  password: ""  # Should be set via environment variable
+  ssl_mode: prefer
+  pool_size: 5
+  timeout: 30
+
+# API configuration
+api:
+  base_url: "https://api.example.com"
+  version: "v1"
+  timeout: 30
+  retry_attempts: 3
+  rate_limit: 1000
+  headers:
+    User-Agent: "AIM2-Client/1.0"
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  handlers:
+    - console
+  file_path: null
+  max_file_size: "10MB"
+  backup_count: 3
+
+# NLP model configuration
+nlp:
+  models:
+    ner: "bert-base-uncased"
+    relationship: "roberta-base"
+    embedding: "sentence-transformers/all-MiniLM-L6-v2"
+  max_sequence_length: 512
+  batch_size: 16
+  cache_dir: "/tmp/aim2_models"
+  device: "auto"  # auto, cpu, cuda
+
+# Ontology processing configuration
+ontology:
+  default_namespace: "http://aim2.example.com/ontology#"
+  import_paths:
+    - "./data/ontologies"
+  export_formats:
+    - "owl"
+    - "rdf"
+  validation:
+    strict_mode: false
+    check_consistency: true
+
+# Feature flags and settings
+features:
+  enable_caching: true
+  cache_ttl: 3600
+  enable_metrics: false
+  debug_mode: false
+  async_processing: true
+  max_workers: 2
+
+# Data processing configuration
+data:
+  input_formats:
+    - "txt"
+    - "pdf"
+    - "xml"
+  output_directory: "./output"
+  batch_size: 100
+  parallel_processing: true
+
+# LLM interface configuration
+llm:
+  provider: "openai"  # openai, anthropic, huggingface
+  model: "gpt-3.5-turbo"
+  max_tokens: 2048
+  temperature: 0.1
+  timeout: 60
+  retry_attempts: 3
+
+# Evaluation and benchmarking
+evaluation:
+  metrics:
+    - "precision"
+    - "recall"
+    - "f1_score"
+  benchmark_datasets: []
+  output_format: "json"
+
+# Security settings
+security:
+  encrypt_config: false
+  allowed_hosts: []
+  cors_enabled: false

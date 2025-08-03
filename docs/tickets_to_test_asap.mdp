@@ -1,0 +1,26 @@
+# AIM2 Tickets Producing Testable Programs Before MVP Completion
+
+These tickets can produce scripts or modules that can be tested as soon as their direct dependencies are completed, even before the entire MVP phase is finished.
+
+## Infrastructure & Setup
+- AIM2-001: Project Repository Setup (Critical, Independent)
+- AIM2-002: Development Environment Configuration (Critical, Independent)
+- AIM2-003: Configuration Management System (High, Independent)
+- AIM2-005: Base Exception Classes (Medium, Independent)
+
+## Utilities Module
+- AIM2-051: LLM Interface Base Implementation (Critical, Depends on AIM2-003)
+
+## Ontology Development
+- AIM2-011: Ontology Data Models (Critical, Independent)
+- AIM2-031: Document Parser Framework (High, Independent)
+- AIM2-035: Text Preprocessing Pipeline (High, Independent)
+- AIM2-044: Evaluation Metrics Implementation (Medium, Independent)
+
+## Tickets with Single Dependencies
+- AIM2-004: Logging Framework Setup (High, Depends on AIM2-003)
+- AIM2-012: Ontology Parser Implementation (High, Depends on AIM2-011)
+
+---
+
+You can test the outputs of these tickets as soon as their direct dependencies are completed, without waiting for the entire MVP phase to finish.

@@ -1,8 +1,12 @@
-# AIM2 Project Development Tickets
+# AIM2 Project Tickets Grouped by MVP Phase
 
-## Infrastructure & Setup Tickets
+---
 
-### AIM2-001: Project Repository Setup
+## MVP Phase Tickets
+
+### Infrastructure & Setup Tickets
+
+#### AIM2-001: Project Repository Setup
 **Priority**: Critical  
 **Status**: Independent  
 **Description**: Initialize Git repository with proper structure, .gitignore, README, and LICENSE  
@@ -15,7 +19,7 @@
 
 ---
 
-### AIM2-002: Development Environment Configuration
+#### AIM2-002: Development Environment Configuration
 **Priority**: Critical  
 **Status**: Independent  
 **Description**: Create requirements.txt, setup.py, and virtual environment configuration  
@@ -27,7 +31,7 @@
 
 ---
 
-### AIM2-003: Configuration Management System
+#### AIM2-003: Configuration Management System
 **Priority**: High  
 **Status**: Independent  
 **Description**: Implement YAML-based configuration system for all modules  
@@ -39,7 +43,7 @@
 
 ---
 
-### AIM2-004: Logging Framework Setup
+#### AIM2-004: Logging Framework Setup
 **Priority**: High  
 **Status**: Depends on: AIM2-003  
 **Description**: Implement comprehensive logging system across all modules  
@@ -51,80 +55,7 @@
 
 ---
 
-### AIM2-005: Base Exception Classes
-**Priority**: Medium  
-**Status**: Independent  
-**Description**: Create custom exception hierarchy for better error handling  
-**Acceptance Criteria**:
-- Base AIM2Exception class
-- Module-specific exceptions
-- Proper exception documentation
-- Error code system
-
-## Utilities Module Tickets
-
-### AIM2-051: LLM Interface Base Implementation
-**Priority**: Critical  
-**Status**: Depends on: AIM2-003  
-**Description**: Create unified interface for multiple LLM providers  
-**Acceptance Criteria**:
-- Abstract base class for LLM interface
-- Support for Llama, GPT-4, and Gemma
-- Prompt template management
-- Response parsing utilities
-- Rate limiting and retry logic
-
----
-
-### AIM2-052: Local LLM Integration
-**Priority**: High  
-**Status**: Depends on: AIM2-051  
-**Description**: Implement local LLM support (Llama 70B)  
-**Acceptance Criteria**:
-- Local model loading and inference
-- Memory-efficient processing
-- Batch processing support
-- Performance optimization
-
----
-
-### AIM2-053: Cloud LLM Integration
-**Priority**: High  
-**Status**: Depends on: AIM2-051  
-**Description**: Implement cloud LLM API integrations  
-**Acceptance Criteria**:
-- OpenAI API integration for GPT-4
-- Google API integration for Gemma
-- API key management
-- Cost tracking utilities
-
----
-
-### AIM2-054: Prompt Optimization Engine
-**Priority**: Medium  
-**Status**: Depends on: AIM2-051  
-**Description**: Implement automatic prompt optimization for various tasks  
-**Acceptance Criteria**:
-- Few-shot example selection
-- Prompt template library
-- A/B testing framework
-- Performance metrics tracking
-
----
-
-### AIM2-055: Synthetic Data Generator Core
-**Priority**: High  
-**Status**: Depends on: AIM2-051  
-**Description**: Implement core synthetic data generation functionality  
-**Acceptance Criteria**:
-- Base synthetic data generator class
-- Template-based generation
-- Configurable data characteristics
-- Validation of generated data
-
-## Ontology Development Tickets
-
-### AIM2-011: Ontology Data Models
+#### AIM2-011: Ontology Data Models
 **Priority**: Critical  
 **Status**: Independent  
 **Description**: Create data models for ontology representation  
@@ -136,7 +67,7 @@
 
 ---
 
-### AIM2-012: Ontology Parser Implementation
+#### AIM2-012: Ontology Parser Implementation
 **Priority**: High  
 **Status**: Depends on: AIM2-011  
 **Description**: Implement parsers for various ontology formats  
@@ -148,7 +79,7 @@
 
 ---
 
-### AIM2-013: Ontology Manager Core
+#### AIM2-013: Ontology Manager Core
 **Priority**: High  
 **Status**: Depends on: AIM2-011, AIM2-012  
 **Description**: Implement main OntologyManager class  
@@ -160,95 +91,7 @@
 
 ---
 
-### AIM2-014: External Ontology Downloaders
-**Priority**: Medium  
-**Status**: Depends on: AIM2-013  
-**Description**: Implement automated downloading of external ontologies  
-**Acceptance Criteria**:
-- ChEBI ontology downloader
-- Plant Ontology downloader
-- NCBI Taxonomy downloader
-- Gene Ontology downloader
-- Caching mechanism
-
----
-
-### AIM2-015: Intelligent Ontology Trimmer
-**Priority**: High  
-**Status**: Depends on: AIM2-013, AIM2-051  
-**Description**: Implement LLM-based ontology trimming functionality  
-**Acceptance Criteria**:
-- Relevance scoring algorithm
-- LLM-based term evaluation
-- Configurable trimming thresholds
-- Trimming rule generation
-- Validation of trimmed ontology consistency
-
----
-
-### AIM2-016: Ontology Integration Engine
-**Priority**: High  
-**Status**: Depends on: AIM2-013  
-**Description**: Implement multi-source ontology integration  
-**Acceptance Criteria**:
-- Structural annotation integration
-- Source annotation integration
-- Functional annotation integration
-- Conflict detection algorithm
-- Mapping between different ontology schemes
-
----
-
-### AIM2-017: LLM-based Conflict Resolution
-**Priority**: Medium  
-**Status**: Depends on: AIM2-016, AIM2-051  
-**Description**: Implement automated conflict resolution using LLMs  
-**Acceptance Criteria**:
-- Conflict identification
-- LLM prompts for resolution
-- Confidence scoring
-- Manual override options
-
----
-
-### AIM2-018: Relationship Manager Implementation
-**Priority**: High  
-**Status**: Depends on: AIM2-011  
-**Description**: Create comprehensive relationship management system  
-**Acceptance Criteria**:
-- Relationship CRUD operations
-- Hierarchical relationship support
-- Transitive relationship inference
-- Cycle detection
-- Graph export functionality
-
----
-
-### AIM2-019: Relationship Inference Engine
-**Priority**: Medium  
-**Status**: Depends on: AIM2-018, AIM2-051  
-**Description**: Implement LLM-based relationship inference  
-**Acceptance Criteria**:
-- Missing relationship detection
-- LLM-based inference
-- Confidence scoring
-- Validation rules
-
----
-
-### AIM2-020: Ontology Persistence Layer
-**Priority**: Medium  
-**Status**: Depends on: AIM2-013  
-**Description**: Implement efficient storage and retrieval of ontologies  
-**Acceptance Criteria**:
-- File-based storage (OWL, CSV)
-- In-memory caching
-- Versioning support
-- Change tracking
-
-## Information Extraction Tickets
-
-### AIM2-031: Document Parser Framework
+#### AIM2-031: Document Parser Framework
 **Priority**: High  
 **Status**: Independent  
 **Description**: Create unified document parsing framework  
@@ -261,7 +104,7 @@
 
 ---
 
-### AIM2-032: Corpus Builder Core
+#### AIM2-032: Corpus Builder Core
 **Priority**: High  
 **Status**: Depends on: AIM2-031  
 **Description**: Implement main corpus building functionality  
@@ -274,31 +117,7 @@
 
 ---
 
-### AIM2-033: PubMed/PMC Integration
-**Priority**: High  
-**Status**: Depends on: AIM2-032  
-**Description**: Implement PubMed and PMC API integration  
-**Acceptance Criteria**:
-- E-utilities API wrapper
-- Batch downloading
-- Rate limit handling
-- Full-text retrieval when available
-
----
-
-### AIM2-034: Synthetic Paper Generator
-**Priority**: Medium  
-**Status**: Depends on: AIM2-055  
-**Description**: Generate synthetic scientific papers for testing  
-**Acceptance Criteria**:
-- Realistic paper structure
-- Domain-specific content
-- Configurable entity density
-- Multiple format support
-
----
-
-### AIM2-035: Text Preprocessing Pipeline
+#### AIM2-035: Text Preprocessing Pipeline
 **Priority**: High  
 **Status**: Independent  
 **Description**: Implement comprehensive text preprocessing  
@@ -311,7 +130,7 @@
 
 ---
 
-### AIM2-036: NER Model Framework
+#### AIM2-036: NER Model Framework
 **Priority**: Critical  
 **Status**: Depends on: AIM2-035  
 **Description**: Create framework for multiple NER approaches  
@@ -323,7 +142,7 @@
 
 ---
 
-### AIM2-037: BERT-based NER Implementation
+#### AIM2-037: BERT-based NER Implementation
 **Priority**: High  
 **Status**: Depends on: AIM2-036  
 **Description**: Implement BERT/CyBERT-based entity extraction  
@@ -335,7 +154,7 @@
 
 ---
 
-### AIM2-038: LLM-based NER Implementation
+#### AIM2-038: LLM-based NER Implementation
 **Priority**: High  
 **Status**: Depends on: AIM2-036, AIM2-051  
 **Description**: Implement LLM-based entity extraction  
@@ -347,20 +166,7 @@
 
 ---
 
-### AIM2-039: Entity Post-processing Pipeline
-**Priority**: Medium  
-**Status**: Depends on: AIM2-037, AIM2-038  
-**Description**: Implement entity normalization and deduplication  
-**Acceptance Criteria**:
-- Entity normalization rules
-- Abbreviation expansion
-- Synonym resolution
-- Duplicate removal
-- Species disambiguation
-
----
-
-### AIM2-040: Relationship Extraction Framework
+#### AIM2-040: Relationship Extraction Framework
 **Priority**: High  
 **Status**: Depends on: AIM2-036  
 **Description**: Create framework for relationship extraction  
@@ -372,7 +178,7 @@
 
 ---
 
-### AIM2-041: LLM Relationship Extractor
+#### AIM2-041: LLM Relationship Extractor
 **Priority**: High  
 **Status**: Depends on: AIM2-040, AIM2-051  
 **Description**: Implement sophisticated LLM-based relationship extraction  
@@ -385,57 +191,20 @@
 
 ---
 
-### AIM2-042: Ontology Mapping Engine
-**Priority**: High  
-**Status**: Depends on: AIM2-039, AIM2-013  
-**Description**: Map extracted entities/relationships to ontology  
+#### AIM2-051: LLM Interface Base Implementation
+**Priority**: Critical  
+**Status**: Depends on: AIM2-003  
+**Description**: Create unified interface for multiple LLM providers  
 **Acceptance Criteria**:
-- Fuzzy matching algorithms
-- Multiple mapping strategies
-- Ambiguity resolution
-- Mapping confidence scores
+- Abstract base class for LLM interface
+- Support for Llama, GPT-4, and Gemma
+- Prompt template management
+- Response parsing utilities
+- Rate limiting and retry logic
 
 ---
 
-### AIM2-043: Synthetic Benchmark Generator
-**Priority**: Medium  
-**Status**: Depends on: AIM2-055, AIM2-034  
-**Description**: Generate gold standard benchmarks using LLMs  
-**Acceptance Criteria**:
-- Configurable annotation density
-- Multiple annotation types
-- Quality validation
-- Format export options
-
----
-
-### AIM2-044: Evaluation Metrics Implementation
-**Priority**: Medium  
-**Status**: Independent  
-**Description**: Implement comprehensive evaluation metrics  
-**Acceptance Criteria**:
-- Precision, recall, F1 calculations
-- Entity-level metrics
-- Relationship-level metrics
-- Confusion matrix generation
-- Statistical significance tests
-
----
-
-### AIM2-045: Model Benchmarking System
-**Priority**: Medium  
-**Status**: Depends on: AIM2-044, AIM2-043  
-**Description**: Create automated benchmarking pipeline  
-**Acceptance Criteria**:
-- Multi-model comparison
-- Performance profiling
-- Resource usage tracking
-- Report generation
-- Results visualization
-
-## Integration and Testing Tickets
-
-### AIM2-061: End-to-End Pipeline Integration
+#### AIM2-061: End-to-End Pipeline Integration
 **Priority**: High  
 **Status**: Depends on: AIM2-013, AIM2-032, AIM2-040  
 **Description**: Integrate all modules into cohesive pipeline  
@@ -447,19 +216,7 @@
 
 ---
 
-### AIM2-062: Command Line Interface
-**Priority**: Medium  
-**Status**: Depends on: AIM2-061  
-**Description**: Create CLI for all major functionalities  
-**Acceptance Criteria**:
-- Argument parsing
-- Subcommands for each module
-- Progress indicators
-- Help documentation
-
----
-
-### AIM2-063: Unit Test Suite
+#### AIM2-063: Unit Test Suite
 **Priority**: High  
 **Status**: Depends on: All implementation tickets  
 **Description**: Comprehensive unit tests for all modules  
@@ -471,7 +228,7 @@
 
 ---
 
-### AIM2-064: Integration Test Suite
+#### AIM2-064: Integration Test Suite
 **Priority**: High  
 **Status**: Depends on: AIM2-061  
 **Description**: End-to-end integration testing  
@@ -483,7 +240,233 @@
 
 ---
 
-### AIM2-065: Documentation Generation
+## Post-MVP Phase Tickets
+
+### Infrastructure & Setup Tickets
+
+#### AIM2-005: Base Exception Classes
+**Priority**: Medium  
+**Status**: Independent  
+**Description**: Create custom exception hierarchy for better error handling  
+**Acceptance Criteria**:
+- Base AIM2Exception class
+- Module-specific exceptions
+- Proper exception documentation
+- Error code system
+
+---
+
+#### AIM2-014: External Ontology Downloaders
+**Priority**: Medium  
+**Status**: Depends on: AIM2-013  
+**Description**: Implement automated downloading of external ontologies  
+**Acceptance Criteria**:
+- ChEBI ontology downloader
+- Plant Ontology downloader
+- NCBI Taxonomy downloader
+- Gene Ontology downloader
+- Caching mechanism
+
+---
+
+#### AIM2-015: Intelligent Ontology Trimmer
+**Priority**: High  
+**Status**: Depends on: AIM2-013, AIM2-051  
+**Description**: Implement LLM-based ontology trimming functionality  
+**Acceptance Criteria**:
+- Relevance scoring algorithm
+- LLM-based term evaluation
+- Configurable trimming thresholds
+- Trimming rule generation
+- Validation of trimmed ontology consistency
+
+---
+
+#### AIM2-016: Ontology Integration Engine
+**Priority**: High  
+**Status**: Depends on: AIM2-013  
+**Description**: Implement multi-source ontology integration  
+**Acceptance Criteria**:
+- Structural annotation integration
+- Source annotation integration
+- Functional annotation integration
+- Conflict detection algorithm
+- Mapping between different ontology schemes
+
+---
+
+#### AIM2-017: LLM-based Conflict Resolution
+**Priority**: Medium  
+**Status**: Depends on: AIM2-016, AIM2-051  
+**Description**: Implement automated conflict resolution using LLMs  
+**Acceptance Criteria**:
+- Conflict identification
+- LLM prompts for resolution
+- Confidence scoring
+- Manual override options
+
+---
+
+#### AIM2-018: Relationship Manager Implementation
+**Priority**: High  
+**Status**: Depends on: AIM2-011  
+**Description**: Create comprehensive relationship management system  
+**Acceptance Criteria**:
+- Relationship CRUD operations
+- Hierarchical relationship support
+- Transitive relationship inference
+- Cycle detection
+- Graph export functionality
+
+---
+
+#### AIM2-019: Relationship Inference Engine
+**Priority**: Medium  
+**Status**: Depends on: AIM2-018, AIM2-051  
+**Description**: Implement LLM-based relationship inference  
+**Acceptance Criteria**:
+- Missing relationship detection
+- LLM-based inference
+- Confidence scoring
+- Validation rules
+
+---
+
+#### AIM2-020: Ontology Persistence Layer
+**Priority**: Medium  
+**Status**: Depends on: AIM2-013  
+**Description**: Implement efficient storage and retrieval of ontologies  
+**Acceptance Criteria**:
+- File-based storage (OWL, CSV)
+- In-memory caching
+- Versioning support
+- Change tracking
+
+---
+
+#### AIM2-052: Local LLM Integration
+**Priority**: High  
+**Status**: Depends on: AIM2-051  
+**Description**: Implement local LLM support (Llama 70B)  
+**Acceptance Criteria**:
+- Local model loading and inference
+- Memory-efficient processing
+- Batch processing support
+- Performance optimization
+
+---
+
+#### AIM2-053: Cloud LLM Integration
+**Priority**: High  
+**Status**: Depends on: AIM2-051  
+**Description**: Implement cloud LLM API integrations  
+**Acceptance Criteria**:
+- OpenAI API integration for GPT-4
+- Google API integration for Gemma
+- API key management
+- Cost tracking utilities
+
+---
+
+#### AIM2-054: Prompt Optimization Engine
+**Priority**: Medium  
+**Status**: Depends on: AIM2-051  
+**Description**: Implement automatic prompt optimization for various tasks  
+**Acceptance Criteria**:
+- Few-shot example selection
+- Prompt template library
+- A/B testing framework
+- Performance metrics tracking
+
+---
+
+#### AIM2-055: Synthetic Data Generator Core
+**Priority**: High  
+**Status**: Depends on: AIM2-051  
+**Description**: Implement core synthetic data generation functionality  
+**Acceptance Criteria**:
+- Base synthetic data generator class
+- Template-based generation
+- Configurable data characteristics
+- Validation of generated data
+
+---
+
+#### AIM2-034: Synthetic Paper Generator
+**Priority**: Medium  
+**Status**: Depends on: AIM2-055  
+**Description**: Generate synthetic scientific papers for testing  
+**Acceptance Criteria**:
+- Realistic paper structure
+- Domain-specific content
+- Configurable entity density
+- Multiple format support
+
+---
+
+#### AIM2-039: Entity Post-processing Pipeline
+**Priority**: Medium  
+**Status**: Depends on: AIM2-037, AIM2-038  
+**Description**: Implement entity normalization and deduplication  
+**Acceptance Criteria**:
+- Entity normalization rules
+- Abbreviation expansion
+- Synonym resolution
+- Duplicate removal
+- Species disambiguation
+
+---
+
+#### AIM2-042: Ontology Mapping Engine
+**Priority**: High  
+**Status**: Depends on: AIM2-039, AIM2-013  
+**Description**: Map extracted entities/relationships to ontology  
+**Acceptance Criteria**:
+- Fuzzy matching algorithms
+- Multiple mapping strategies
+- Ambiguity resolution
+- Mapping confidence scores
+
+---
+
+#### AIM2-043: Synthetic Benchmark Generator
+**Priority**: Medium  
+**Status**: Depends on: AIM2-055, AIM2-034  
+**Description**: Generate gold standard benchmarks using LLMs  
+**Acceptance Criteria**:
+- Configurable annotation density
+- Multiple annotation types
+- Quality validation
+- Format export options
+
+---
+
+#### AIM2-045: Model Benchmarking System
+**Priority**: Medium  
+**Status**: Depends on: AIM2-044, AIM2-043  
+**Description**: Create automated benchmarking pipeline  
+**Acceptance Criteria**:
+- Multi-model comparison
+- Performance profiling
+- Resource usage tracking
+- Report generation
+- Results visualization
+
+---
+
+#### AIM2-062: Command Line Interface
+**Priority**: Medium  
+**Status**: Depends on: AIM2-061  
+**Description**: Create CLI for all major functionalities  
+**Acceptance Criteria**:
+- Argument parsing
+- Subcommands for each module
+- Progress indicators
+- Help documentation
+
+---
+
+#### AIM2-065: Documentation Generation
 **Priority**: Medium  
 **Status**: Depends on: AIM2-061  
 **Description**: Create comprehensive documentation  
@@ -495,7 +478,7 @@
 
 ---
 
-### AIM2-066: Performance Optimization
+#### AIM2-066: Performance Optimization
 **Priority**: Medium  
 **Status**: Depends on: AIM2-064  
 **Description**: Optimize critical paths for performance  
@@ -507,7 +490,7 @@
 
 ---
 
-### AIM2-067: Validation Dataset Creation
+#### AIM2-067: Validation Dataset Creation
 **Priority**: Low  
 **Status**: Depends on: AIM2-043  
 **Description**: Create diverse validation datasets  
@@ -519,7 +502,7 @@
 
 ---
 
-### AIM2-068: Deployment Package
+#### AIM2-068: Deployment Package
 **Priority**: Low  
 **Status**: Depends on: AIM2-065  
 **Description**: Create deployment-ready package  
@@ -531,7 +514,7 @@
 
 ---
 
-### AIM2-069: Example Workflows
+#### AIM2-069: Example Workflows
 **Priority**: Low  
 **Status**: Depends on: AIM2-061  
 **Description**: Create example workflows for common use cases  
@@ -543,7 +526,7 @@
 
 ---
 
-### AIM2-070: Final Integration Testing
+#### AIM2-070: Final Integration Testing
 **Priority**: Low  
 **Status**: Depends on: All tickets  
 **Description**: Comprehensive final testing and validation  
@@ -553,23 +536,4 @@
 - Documentation complete
 - Ready for release
 
-## Ticket Summary by Independence
-
-### Fully Independent Tickets (Can start immediately):
-- AIM2-001, AIM2-002, AIM2-003, AIM2-005
-- AIM2-011, AIM2-031, AIM2-035, AIM2-044
-
-### Tickets with Single Dependencies:
-- AIM2-004 (→ AIM2-003)
-- AIM2-012 (→ AIM2-011)
-- AIM2-051 (→ AIM2-003)
-
-### Tickets with Multiple Dependencies:
-- AIM2-013 (→ AIM2-011, AIM2-012)
-- AIM2-061 (→ AIM2-013, AIM2-032, AIM2-040)
-- AIM2-070 (→ All tickets)
-
-### Critical Path Tickets:
-1. AIM2-003 → AIM2-051 (LLM Interface needed for many features)
-2. AIM2-011 → AIM2-012 → AIM2-013 (Core ontology functionality)
-3. AIM2-035 → AIM2-036 → AIM2-037/038 (NER pipeline)
+---
