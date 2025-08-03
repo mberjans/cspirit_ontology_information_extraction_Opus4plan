@@ -62,7 +62,7 @@
 - [x] **AIM2-005-11** Run exception handling unit tests
 - [x] **AIM2-011-01** Write unit tests for Term class
 - [x] **AIM2-011-02** Write unit tests for Relationship class
-- [ ] **AIM2-011-03** Write unit tests for Ontology class
+- [x] **AIM2-011-03** Write unit tests for Ontology class
 - [ ] **AIM2-011-04** Create Term dataclass with attributes
 - [ ] **AIM2-011-05** Add term validation methods
 - [ ] **AIM2-011-06** Create Relationship dataclass
