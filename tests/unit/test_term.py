@@ -365,54 +365,105 @@ class TestTermStringRepresentation:
 
     def test_str_representation(self):
         """Test __str__ method for user-friendly display."""
-        with patch("aim2_project.aim2_ontology.models.Term") as MockTerm:
-            term = MockTerm(id="CHEBI:12345", name="glucose")
-            term.__str__ = Mock(return_value="glucose (CHEBI:12345)")
-
-            assert str(term) == "glucose (CHEBI:12345)"
+        term = Term(id="CHEBI:12345", name="glucose")
+        assert str(term) == "glucose (CHEBI:12345)"
 
     def test_repr_representation(self):
         """Test __repr__ method for debugging."""
-        with patch("aim2_project.aim2_ontology.models.Term") as MockTerm:
-            term = MockTerm(id="CHEBI:12345", name="glucose")
-            term.__repr__ = Mock(return_value="Term(id='CHEBI:12345', name='glucose')")
-
-            assert repr(term) == "Term(id='CHEBI:12345', name='glucose')"
+        term = Term(id="CHEBI:12345", name="glucose")
+        assert repr(term) == "Term(id='CHEBI:12345', name='glucose')"
 
     def test_str_with_definition(self):
         """Test string representation with definition."""
-        with patch("aim2_project.aim2_ontology.models.Term") as MockTerm:
-            term = MockTerm(
-                id="CHEBI:12345", name="glucose", definition="A monosaccharide"
-            )
-            term.__str__ = Mock(return_value="glucose (CHEBI:12345): A monosaccharide")
-
-            assert str(term) == "glucose (CHEBI:12345): A monosaccharide"
+        term = Term(id="CHEBI:12345", name="glucose", definition="A monosaccharide")
+        assert str(term) == "glucose (CHEBI:12345): A monosaccharide"
 
     def test_str_obsolete_term(self):
         """Test string representation of obsolete term."""
-        with patch("aim2_project.aim2_ontology.models.Term") as MockTerm:
-            term = MockTerm(id="CHEBI:12345", name="glucose", is_obsolete=True)
-            term.__str__ = Mock(return_value="[OBSOLETE] glucose (CHEBI:12345)")
+        term = Term(id="CHEBI:12345", name="glucose", is_obsolete=True)
+        assert str(term) == "[OBSOLETE] glucose (CHEBI:12345)"
 
-            assert str(term) == "[OBSOLETE] glucose (CHEBI:12345)"
+    def test_str_obsolete_term_with_definition(self):
+        """Test string representation of obsolete term with definition."""
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            definition="A monosaccharide",
+            is_obsolete=True,
+        )
+        assert str(term) == "[OBSOLETE] glucose (CHEBI:12345): A monosaccharide"
 
-    def test_repr_with_all_attributes(self):
-        """Test repr with multiple attributes."""
-        with patch("aim2_project.aim2_ontology.models.Term") as MockTerm:
-            term = MockTerm(
-                id="CHEBI:12345",
-                name="glucose",
-                synonyms=["dextrose"],
-                is_obsolete=False,
-            )
-            expected_repr = (
-                "Term(id='CHEBI:12345', name='glucose', "
-                "synonyms=['dextrose'], is_obsolete=False)"
-            )
-            term.__repr__ = Mock(return_value=expected_repr)
+    def test_repr_with_synonyms(self):
+        """Test repr with synonyms."""
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            synonyms=["dextrose", "D-glucose"],
+        )
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        assert "synonyms=['dextrose', 'D-glucose']" in repr_str
 
-            assert repr(term) == expected_repr
+    def test_repr_with_definition(self):
+        """Test repr with definition."""
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            definition="A monosaccharide that is aldehydo-D-glucose",
+        )
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        assert "definition='A monosaccharide that is aldehydo-D-glucose'" in repr_str
+
+    def test_repr_with_long_definition(self):
+        """Test repr with definition longer than 50 characters."""
+        long_definition = "A" * 60  # 60 characters
+        term = Term(id="CHEBI:12345", name="glucose", definition=long_definition)
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        # Should truncate definition and add ellipsis
+        assert f"definition='{long_definition[:50]}...'" in repr_str
+
+    def test_repr_with_namespace(self):
+        """Test repr with namespace."""
+        term = Term(id="CHEBI:12345", name="glucose", namespace="chemical")
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        assert "namespace='chemical'" in repr_str
+
+    def test_repr_with_obsolete_flag(self):
+        """Test repr with obsolete flag."""
+        term = Term(id="CHEBI:12345", name="glucose", is_obsolete=True)
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        assert "is_obsolete=True" in repr_str
+
+    def test_repr_with_multiple_attributes(self):
+        """Test repr with multiple non-default attributes."""
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            definition="A monosaccharide",
+            synonyms=["dextrose"],
+            namespace="chemical",
+            is_obsolete=False,
+        )
+        repr_str = repr(term)
+        assert "Term(id='CHEBI:12345', name='glucose'" in repr_str
+        assert "definition='A monosaccharide'" in repr_str
+        assert "synonyms=['dextrose']" in repr_str
+        assert "namespace='chemical'" in repr_str
+        # is_obsolete=False should not appear as it's the default value
+
+    def test_str_edge_cases(self):
+        """Test string representation edge cases."""
+        # Term with empty definition should not show definition
+        term_empty_def = Term(id="CHEBI:12345", name="glucose", definition="")
+        assert str(term_empty_def) == "glucose (CHEBI:12345)"
+
+        # Term with None definition should not show definition
+        term_none_def = Term(id="CHEBI:12345", name="glucose", definition=None)
+        assert str(term_none_def) == "glucose (CHEBI:12345)"
 
 
 class TestTermSerialization:

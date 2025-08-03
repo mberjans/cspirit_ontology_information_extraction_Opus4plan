@@ -44,9 +44,8 @@ import pytest
 from unittest.mock import Mock, patch
 
 
-# Note: The Relationship class doesn't exist yet - these tests define its expected behavior
-# The import will be uncommented once the class is implemented
-# from aim2_project.aim2_ontology.models import Relationship
+# Import the implemented Relationship class
+from aim2_project.aim2_ontology.models import Relationship
 
 
 class TestRelationshipCreation:
@@ -248,8 +247,10 @@ class TestRelationshipValidation:
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
             mock_instance = Mock()
+            # Fix mock validation to match regex pattern ^[A-Za-z]+:\d+$
             mock_instance.validate_id_format.side_effect = (
-                lambda x: ":" in x and len(x.split(":")) == 2
+                lambda x: x is not None and ":" in x and len(x.split(":")) == 2 
+                and x.split(":")[0].isalpha() and x.split(":")[1].isdigit()
             )
             MockRelationship.return_value = mock_instance
 
@@ -510,13 +511,18 @@ class TestRelationshipEquality:
         with patch(
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
-            rel1 = MockRelationship(
+            # Create separate mock instances
+            rel1 = Mock()
+            rel2 = Mock()
+            MockRelationship.side_effect = [rel1, rel2]
+
+            MockRelationship(
                 id="REL:001",
                 subject="CHEBI:12345",
                 predicate="is_a",
                 object="CHEBI:33917",
             )
-            rel2 = MockRelationship(
+            MockRelationship(
                 id="REL:002",
                 subject="CHEBI:54321",
                 predicate="part_of",
@@ -595,32 +601,39 @@ class TestRelationshipEquality:
         with patch(
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
-            rel1 = MockRelationship(
+            # Create separate mock instances
+            rel1 = Mock()
+            rel2 = Mock()
+            rel3 = Mock()
+            MockRelationship.side_effect = [rel1, rel2, rel3]
+
+            MockRelationship(
                 id="REL:001",
                 subject="CHEBI:12345",
                 predicate="is_a",
                 object="CHEBI:33917",
             )
-            rel2 = MockRelationship(
+            MockRelationship(
                 id="REL:002",
                 subject="CHEBI:54321",
                 predicate="part_of",
                 object="CHEBI:12345",
             )
-            rel3 = MockRelationship(
+            MockRelationship(
                 id="REL:001",
                 subject="CHEBI:12345",
                 predicate="is_a",
                 object="CHEBI:33917",
             )  # duplicate of rel1
 
-            # Configure hashing and equality
+            # Configure hashing and equality for set operations
             rel1.__hash__ = Mock(return_value=12345)
             rel2.__hash__ = Mock(return_value=54321)
             rel3.__hash__ = Mock(return_value=12345)
 
+            # Configure equality so rel1 and rel3 are equal
             rel1.__eq__ = Mock(side_effect=lambda other: other is rel3)
-            rel2.__eq__ = Mock(return_value=False)
+            rel2.__eq__ = Mock(side_effect=lambda other: other is not rel1 and other is not rel3)
             rel3.__eq__ = Mock(side_effect=lambda other: other is rel1)
 
             rel_set = {rel1, rel2, rel3}
@@ -651,114 +664,250 @@ class TestRelationshipStringRepresentation:
 
     def test_str_representation(self):
         """Test __str__ method for user-friendly display."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="is_a",
-                object="CHEBI:33917",
-            )
-            rel.__str__ = Mock(return_value="CHEBI:12345 is_a CHEBI:33917")
-
-            assert str(rel) == "CHEBI:12345 is_a CHEBI:33917"
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+        )
+        assert str(rel) == "CHEBI:12345 is_a CHEBI:33917"
 
     def test_repr_representation(self):
         """Test __repr__ method for debugging."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="is_a",
-                object="CHEBI:33917",
-            )
-            rel.__repr__ = Mock(
-                return_value="Relationship(id='REL:001', subject='CHEBI:12345', predicate='is_a', object='CHEBI:33917')"
-            )
-
-            assert (
-                repr(rel)
-                == "Relationship(id='REL:001', subject='CHEBI:12345', predicate='is_a', object='CHEBI:33917')"
-            )
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+        )
+        assert (
+            repr(rel)
+            == "Relationship(id='REL:001', subject='CHEBI:12345', predicate='is_a', object='CHEBI:33917')"
+        )
 
     def test_str_with_confidence(self):
         """Test string representation with confidence score."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="is_a",
-                object="CHEBI:33917",
-                confidence=0.95,
-            )
-            rel.__str__ = Mock(
-                return_value="CHEBI:12345 is_a CHEBI:33917 (confidence: 0.95)"
-            )
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            confidence=0.95,
+        )
+        assert str(rel) == "CHEBI:12345 is_a CHEBI:33917 (confidence: 0.95)"
 
-            assert str(rel) == "CHEBI:12345 is_a CHEBI:33917 (confidence: 0.95)"
+    def test_str_with_default_confidence(self):
+        """Test string representation with default confidence (1.0) - should not show confidence."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            confidence=1.0,
+        )
+        assert str(rel) == "CHEBI:12345 is_a CHEBI:33917"
 
     def test_str_negated_relationship(self):
         """Test string representation of negated relationship."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="is_a",
-                object="CHEBI:33917",
-                negated=True,
-            )
-            rel.__str__ = Mock(return_value="CHEBI:12345 NOT is_a CHEBI:33917")
-
-            assert str(rel) == "CHEBI:12345 NOT is_a CHEBI:33917"
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            negated=True,
+        )
+        assert str(rel) == "CHEBI:12345 NOT is_a CHEBI:33917"
 
     def test_str_with_context(self):
         """Test string representation with context information."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="located_in",
-                object="GO:0005623",
-                context="plant cell wall",
-            )
-            rel.__str__ = Mock(
-                return_value="CHEBI:12345 located_in GO:0005623 [context: plant cell wall]"
-            )
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="located_in",
+            object="GO:0005623",
+            context="plant cell wall",
+        )
+        assert (
+            str(rel) == "CHEBI:12345 located_in GO:0005623 [context: plant cell wall]"
+        )
 
-            assert (
-                str(rel)
-                == "CHEBI:12345 located_in GO:0005623 [context: plant cell wall]"
-            )
+    def test_str_negated_with_confidence_and_context(self):
+        """Test string representation with negation, confidence, and context."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            confidence=0.85,
+            negated=True,
+            context="test environment",
+        )
+        assert (
+            str(rel)
+            == "CHEBI:12345 NOT is_a CHEBI:33917 (confidence: 0.85) [context: test environment]"
+        )
 
-    def test_repr_with_all_attributes(self):
-        """Test repr with multiple attributes."""
-        with patch(
-            "aim2_project.aim2_ontology.models.Relationship"
-        ) as MockRelationship:
-            rel = MockRelationship(
-                id="REL:001",
-                subject="CHEBI:12345",
-                predicate="is_a",
-                object="CHEBI:33917",
-                confidence=0.95,
-                negated=False,
-            )
-            expected_repr = (
-                "Relationship(id='REL:001', subject='CHEBI:12345', "
-                "predicate='is_a', object='CHEBI:33917', confidence=0.95, negated=False)"
-            )
-            rel.__repr__ = Mock(return_value=expected_repr)
+    def test_repr_with_confidence(self):
+        """Test repr with confidence score."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            confidence=0.95,
+        )
+        repr_str = repr(rel)
+        assert (
+            "Relationship(id='REL:001', subject='CHEBI:12345', predicate='is_a', object='CHEBI:33917'"
+            in repr_str
+        )
+        assert "confidence=0.95" in repr_str
 
-            assert repr(rel) == expected_repr
+    def test_repr_with_source(self):
+        """Test repr with source."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            source="ChEBI",
+        )
+        repr_str = repr(rel)
+        assert "source='ChEBI'" in repr_str
+
+    def test_repr_with_evidence(self):
+        """Test repr with evidence."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            evidence="experimental_evidence",
+        )
+        repr_str = repr(rel)
+        assert "evidence='experimental_evidence'" in repr_str
+
+    def test_repr_with_validation_flag(self):
+        """Test repr with is_validated flag."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            is_validated=True,
+        )
+        repr_str = repr(rel)
+        assert "is_validated=True" in repr_str
+
+    def test_repr_with_context(self):
+        """Test repr with context."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            context="cellular metabolism",
+        )
+        repr_str = repr(rel)
+        assert "context='cellular metabolism'" in repr_str
+
+    def test_repr_with_long_context(self):
+        """Test repr with long context (should be truncated)."""
+        long_context = "a" * 40  # 40 characters, should be truncated to 30
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            context=long_context,
+        )
+        repr_str = repr(rel)
+        assert f"context='{long_context[:30]}...'" in repr_str
+
+    def test_repr_with_negated_flag(self):
+        """Test repr with negated flag."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            negated=True,
+        )
+        repr_str = repr(rel)
+        assert "negated=True" in repr_str
+
+    def test_repr_with_non_default_modality(self):
+        """Test repr with non-default modality."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            modality="probable",
+        )
+        repr_str = repr(rel)
+        assert "modality='probable'" in repr_str
+
+    def test_repr_with_non_directional(self):
+        """Test repr with directional=False."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            directional=False,
+        )
+        repr_str = repr(rel)
+        assert "directional=False" in repr_str
+
+    def test_repr_with_multiple_attributes(self):
+        """Test repr with multiple non-default attributes."""
+        rel = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            confidence=0.95,
+            source="ChEBI",
+            evidence="experimental",
+            is_validated=True,
+            context="test",
+            negated=True,
+            modality="probable",
+            directional=False,
+        )
+        repr_str = repr(rel)
+        # Check that all non-default values are included
+        assert "confidence=0.95" in repr_str
+        assert "source='ChEBI'" in repr_str
+        assert "evidence='experimental'" in repr_str
+        assert "is_validated=True" in repr_str
+        assert "context='test'" in repr_str
+        assert "negated=True" in repr_str
+        assert "modality='probable'" in repr_str
+        assert "directional=False" in repr_str
+
+    def test_str_edge_cases(self):
+        """Test string representation edge cases."""
+        # Relationship with empty context should not show context
+        rel_empty_context = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            context="",
+        )
+        assert str(rel_empty_context) == "CHEBI:12345 is_a CHEBI:33917"
+
+        # Relationship with None context should not show context
+        rel_none_context = Relationship(
+            id="REL:001",
+            subject="CHEBI:12345",
+            predicate="is_a",
+            object="CHEBI:33917",
+            context=None,
+        )
+        assert str(rel_none_context) == "CHEBI:12345 is_a CHEBI:33917"
 
 
 class TestRelationshipSerialization:
@@ -1571,12 +1720,17 @@ class TestRelationshipIntegration:
         with patch(
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
+            # Create separate mock instances
+            rel1 = Mock()
+            rel2 = Mock()
+            MockRelationship.side_effect = [rel1, rel2]
+
             # Create multiple relationships
-            rel1 = MockRelationship(**sample_relationship_data)
+            MockRelationship(**sample_relationship_data)
             rel2_data = sample_relationship_data.copy()
             rel2_data["id"] = "REL:002"
             rel2_data["predicate"] = "part_of"
-            rel2 = MockRelationship(**rel2_data)
+            MockRelationship(**rel2_data)
 
             # Configure hashing for set operations
             rel1.__hash__ = Mock(return_value=hash(sample_relationship_data["id"]))
@@ -1597,9 +1751,14 @@ class TestRelationshipIntegration:
         with patch(
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
+            # Create separate mock instances
+            rel1 = Mock()
+            rel2 = Mock()
+            MockRelationship.side_effect = [rel1, rel2]
+
             # Create network of relationships
-            rel1 = MockRelationship(**sample_relationship_data)
-            rel2 = MockRelationship(**sample_plant_relationship_data)
+            MockRelationship(**sample_relationship_data)
+            MockRelationship(**sample_plant_relationship_data)
 
             # Configure network analysis methods
             rel1.get_related_entities = Mock(
@@ -1663,8 +1822,13 @@ class TestRelationshipIntegration:
         with patch(
             "aim2_project.aim2_ontology.models.Relationship"
         ) as MockRelationship:
-            rel1 = MockRelationship(**sample_relationship_data)
-            rel2 = MockRelationship(**sample_negated_relationship_data)
+            # Create separate mock instances
+            rel1 = Mock()
+            rel2 = Mock()
+            MockRelationship.side_effect = [rel1, rel2]
+
+            MockRelationship(**sample_relationship_data)
+            MockRelationship(**sample_negated_relationship_data)
 
             # Configure confidence values
             rel1.confidence = 0.95
@@ -1675,4 +1839,5 @@ class TestRelationshipIntegration:
                 relationships
             )
 
-            assert avg_confidence == 0.90
+            # Use approximate comparison for floating point values
+            assert abs(avg_confidence - 0.90) < 1e-10

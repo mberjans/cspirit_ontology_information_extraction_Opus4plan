@@ -445,20 +445,12 @@ class TestOntologyStringRepresentation:
 
     def test_str_representation(self):
         """Test __str__ method for user-friendly display."""
-        MockOntology = Mock()
-        ontology = MockOntology(id="ONT:001", name="Chemical Ontology", version="1.0")
-        ontology.__str__ = Mock(return_value="Chemical Ontology v1.0 (ONT:001)")
-
+        ontology = Ontology(id="ONT:001", name="Chemical Ontology", version="1.0")
         assert str(ontology) == "Chemical Ontology v1.0 (ONT:001)"
 
     def test_repr_representation(self):
         """Test __repr__ method for debugging."""
-        MockOntology = Mock()
-        ontology = MockOntology(id="ONT:001", name="Chemical Ontology", version="1.0")
-        ontology.__repr__ = Mock(
-            return_value="Ontology(id='ONT:001', name='Chemical Ontology', version='1.0')"
-        )
-
+        ontology = Ontology(id="ONT:001", name="Chemical Ontology", version="1.0")
         assert (
             repr(ontology)
             == "Ontology(id='ONT:001', name='Chemical Ontology', version='1.0')"
@@ -466,71 +458,307 @@ class TestOntologyStringRepresentation:
 
     def test_str_with_description(self):
         """Test string representation with description."""
-        MockOntology = Mock()
-        ontology = MockOntology(
+        ontology = Ontology(
             id="ONT:001",
             name="Chemical Ontology",
             version="1.0",
             description="A comprehensive chemical ontology",
         )
-        ontology.__str__ = Mock(
-            return_value="Chemical Ontology v1.0 (ONT:001): A comprehensive chemical ontology"
-        )
-
         assert (
             str(ontology)
             == "Chemical Ontology v1.0 (ONT:001): A comprehensive chemical ontology"
         )
 
-    def test_str_with_statistics(self):
-        """Test string representation with term and relationship counts."""
-        MockOntology = Mock()
-        ontology = MockOntology(
+    def test_str_with_statistics_no_description(self):
+        """Test string representation with term and relationship counts when no description."""
+        from aim2_project.aim2_ontology.models import Term, Relationship
+
+        ontology = Ontology(
             id="ONT:001",
             name="Chemical Ontology",
             version="1.0",
-            term_count=1500,
-            relationship_count=3200,
         )
-        ontology.__str__ = Mock(
-            return_value="Chemical Ontology v1.0 (ONT:001) - 1500 terms, 3200 relationships"
-        )
+
+        # Add some actual terms and relationships to get real statistics
+        for i in range(3):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology.add_term(term)
+
+        for i in range(2):
+            rel = Relationship(
+                id=f"REL:{i:03d}",
+                subject=f"TERM:{i:03d}",
+                predicate="is_a",
+                object=f"TERM:{(i+1):03d}",
+            )
+            ontology.add_relationship(rel)
 
         assert (
             str(ontology)
-            == "Chemical Ontology v1.0 (ONT:001) - 1500 terms, 3200 relationships"
+            == "Chemical Ontology v1.0 (ONT:001) - 3 terms, 2 relationships"
+        )
+
+    def test_str_with_description_takes_precedence_over_statistics(self):
+        """Test that description takes precedence over statistics in string representation."""
+        from aim2_project.aim2_ontology.models import Term
+
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description="A comprehensive chemical ontology",
+        )
+
+        # Add terms to have real statistics
+        for i in range(2):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology.add_term(term)
+
+        # Description should be shown, not statistics
+        assert (
+            str(ontology)
+            == "Chemical Ontology v1.0 (ONT:001): A comprehensive chemical ontology"
         )
 
     def test_str_inconsistent_ontology(self):
         """Test string representation of inconsistent ontology."""
-        MockOntology = Mock()
-        ontology = MockOntology(
+        ontology = Ontology(
             id="ONT:001", name="Chemical Ontology", version="1.0", is_consistent=False
         )
-        ontology.__str__ = Mock(
-            return_value="[INCONSISTENT] Chemical Ontology v1.0 (ONT:001)"
-        )
-
         assert str(ontology) == "[INCONSISTENT] Chemical Ontology v1.0 (ONT:001)"
 
-    def test_repr_with_all_attributes(self):
-        """Test repr with multiple attributes."""
-        MockOntology = Mock()
-        ontology = MockOntology(
+    def test_str_inconsistent_ontology_with_description(self):
+        """Test string representation of inconsistent ontology with description."""
+        ontology = Ontology(
             id="ONT:001",
             name="Chemical Ontology",
             version="1.0",
-            term_count=150,
-            relationship_count=320,
-            is_consistent=True,
+            description="A chemical ontology",
+            is_consistent=False,
         )
-        expected_repr = (
-            "Ontology(id='ONT:001', name='Chemical Ontology', version='1.0', "
-            "term_count=150, relationship_count=320, is_consistent=True)"
+        assert (
+            str(ontology)
+            == "[INCONSISTENT] Chemical Ontology v1.0 (ONT:001): A chemical ontology"
         )
-        ontology.__repr__ = Mock(return_value=expected_repr)
 
-        assert repr(ontology) == expected_repr
+    def test_str_inconsistent_ontology_with_statistics(self):
+        """Test string representation of inconsistent ontology with statistics."""
+        from aim2_project.aim2_ontology.models import Term
+
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            is_consistent=False,
+        )
+
+        # Add actual terms to get real statistics
+        for i in range(2):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology.add_term(term)
+
+        assert (
+            str(ontology)
+            == "[INCONSISTENT] Chemical Ontology v1.0 (ONT:001) - 2 terms, 0 relationships"
+        )
+
+    def test_repr_with_description(self):
+        """Test repr with description."""
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description="A comprehensive chemical ontology",
+        )
+        repr_str = repr(ontology)
+        assert (
+            "Ontology(id='ONT:001', name='Chemical Ontology', version='1.0'" in repr_str
+        )
+        # Should show truncated description
+        assert "description='A comprehensive chemical ontology'" in repr_str
+
+    def test_repr_with_long_description(self):
+        """Test repr with description longer than 50 characters."""
+        long_description = "A" * 60  # 60 characters
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description=long_description,
+        )
+        repr_str = repr(ontology)
+        # Should truncate description and add ellipsis
+        assert f"description='{long_description[:50]}...'" in repr_str
+
+    def test_repr_with_term_count(self):
+        """Test repr with term count."""
+        from aim2_project.aim2_ontology.models import Term
+
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+        )
+
+        # Add actual terms to get real statistics
+        for i in range(3):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology.add_term(term)
+
+        repr_str = repr(ontology)
+        assert "term_count=3" in repr_str
+
+    def test_repr_with_relationship_count(self):
+        """Test repr with relationship count."""
+        from aim2_project.aim2_ontology.models import Relationship
+
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+        )
+
+        # Add actual relationships to get real statistics
+        for i in range(2):
+            rel = Relationship(
+                id=f"REL:{i:03d}",
+                subject=f"TERM:{i:03d}",
+                predicate="is_a",
+                object=f"TERM:{(i+1):03d}",
+            )
+            ontology.add_relationship(rel)
+
+        repr_str = repr(ontology)
+        assert "relationship_count=2" in repr_str
+
+    def test_repr_with_namespaces(self):
+        """Test repr with namespaces."""
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            namespaces=["chemical", "biological_process"],
+        )
+        repr_str = repr(ontology)
+        assert "namespaces=['chemical', 'biological_process']" in repr_str
+
+    def test_repr_with_inconsistent_flag(self):
+        """Test repr with is_consistent=False."""
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            is_consistent=False,
+        )
+        repr_str = repr(ontology)
+        assert "is_consistent=False" in repr_str
+
+    def test_repr_with_validation_errors(self):
+        """Test repr with validation errors."""
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            validation_errors=["Error 1", "Error 2", "Error 3"],
+        )
+        repr_str = repr(ontology)
+        assert "validation_errors=3 errors" in repr_str
+
+    def test_repr_with_multiple_attributes(self):
+        """Test repr with multiple non-default attributes."""
+        from aim2_project.aim2_ontology.models import Term, Relationship
+
+        ontology = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description="A chemical ontology",
+            namespaces=["chemical"],
+            is_consistent=False,
+            validation_errors=["Error 1", "Error 2"],
+        )
+
+        # Add actual terms and relationships to get real statistics
+        for i in range(2):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology.add_term(term)
+
+        rel = Relationship(
+            id="REL:001", subject="TERM:000", predicate="is_a", object="TERM:001"
+        )
+        ontology.add_relationship(rel)
+
+        repr_str = repr(ontology)
+        # Check that all non-default values are included
+        assert "description='A chemical ontology'" in repr_str
+        assert "term_count=2" in repr_str
+        assert "relationship_count=1" in repr_str
+        assert "namespaces=['chemical']" in repr_str
+        assert "is_consistent=False" in repr_str
+        assert "validation_errors=2 errors" in repr_str
+
+    def test_str_edge_cases(self):
+        """Test string representation edge cases."""
+        # Ontology with empty description should not show description
+        ontology_empty_desc = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description="",
+        )
+        assert str(ontology_empty_desc) == "Chemical Ontology v1.0 (ONT:001)"
+
+        # Ontology with None description should not show description
+        ontology_none_desc = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            description=None,
+        )
+        assert str(ontology_none_desc) == "Chemical Ontology v1.0 (ONT:001)"
+
+        # Ontology with zero counts should not show statistics
+        ontology_zero_counts = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+            term_count=0,
+            relationship_count=0,
+        )
+        assert str(ontology_zero_counts) == "Chemical Ontology v1.0 (ONT:001)"
+
+        # Ontology with only terms should show statistics
+        ontology_only_terms = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+        )
+        from aim2_project.aim2_ontology.models import Term
+
+        for i in range(2):
+            term = Term(id=f"TERM:{i:03d}", name=f"term_{i}")
+            ontology_only_terms.add_term(term)
+        assert (
+            str(ontology_only_terms)
+            == "Chemical Ontology v1.0 (ONT:001) - 2 terms, 0 relationships"
+        )
+
+        # Ontology with only relationships should show statistics
+        ontology_only_rels = Ontology(
+            id="ONT:001",
+            name="Chemical Ontology",
+            version="1.0",
+        )
+        from aim2_project.aim2_ontology.models import Relationship
+
+        rel = Relationship(
+            id="REL:001", subject="TERM:000", predicate="is_a", object="TERM:001"
+        )
+        ontology_only_rels.add_relationship(rel)
+        assert (
+            str(ontology_only_rels)
+            == "Chemical Ontology v1.0 (ONT:001) - 0 terms, 1 relationships"
+        )
 
 
 class TestOntologySerialization:
