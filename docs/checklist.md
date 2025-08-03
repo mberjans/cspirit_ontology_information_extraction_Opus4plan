@@ -30,7 +30,7 @@
 - [x] **AIM2-003-03** Create ConfigManager class skeleton
 - [x] **AIM2-003-04** Implement YAML file loading
 - [x] **AIM2-003-05** Implement JSON file loading support
-- [ ] **AIM2-003-06** Add environment variable override logic
+- [x] **AIM2-003-06** Add environment variable override logic
 - [ ] **AIM2-003-07** Create config schema validator
 - [ ] **AIM2-003-08** Implement config merging functionality
 - [x] **AIM2-003-09** Add config file watching for hot reload
