@@ -5,7 +5,7 @@
 ### AIM2-001: Project Repository Setup
 
 - [x] **AIM2-001-01** Create GitHub/GitLab repository
-- [ ] **AIM2-001-02** Initialize git with main branch
+- [x] **AIM2-001-02** Initialize git with main branch
 - [ ] **AIM2-001-03** Create folder structure as per design
 - [ ] **AIM2-001-04** Add .gitignore for Python projects
 - [ ] **AIM2-001-05** Create empty __init__.py files in all packages
