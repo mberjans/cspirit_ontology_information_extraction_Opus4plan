@@ -2255,6 +2255,16 @@ class Ontology:
     is_consistent: bool = True
     validation_errors: List[str] = field(default_factory=list)
 
+    # Private indexes for efficient term lookups
+    _name_index: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _synonym_index: Dict[str, List[str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _namespace_index: Dict[str, List[str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _alt_id_index: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+
     def __post_init__(self):
         """
         Post-initialization validation and setup.
@@ -2275,6 +2285,9 @@ class Ontology:
 
         # Update counts to match current contents
         self.update_counts()
+
+        # Initialize term indexes
+        self._build_indexes()
 
     def validate_id_format(self, ontology_id: str) -> bool:
         """
@@ -2729,6 +2742,7 @@ class Ontology:
 
             # Add the term
             self.terms[term.id] = term
+            self._add_term_to_indexes(term)
             self.update_counts()
             return True
 
@@ -2758,6 +2772,12 @@ class Ontology:
         try:
             if term_id not in self.terms:
                 return False
+
+            # Get the term before removing it (needed for index cleanup)
+            term = self.terms[term_id]
+
+            # Remove from indexes first
+            self._remove_term_from_indexes(term)
 
             # Remove the term
             del self.terms[term_id]
@@ -2824,6 +2844,184 @@ class Ontology:
                 ):
                     results.append(term)
         return results
+
+    def find_terms_by_name(
+        self, name: str, case_sensitive: bool = False
+    ) -> Optional[Term]:
+        """
+        Find a term by its exact name using the name index for fast lookup.
+
+        Args:
+            name (str): The name to search for
+            case_sensitive (bool): Whether to perform case-sensitive matching (default False)
+
+        Returns:
+            Optional[Term]: The term with the exact name, None if not found
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose")
+            >>> ontology.add_term(term)
+            True
+            >>> found = ontology.find_terms_by_name("glucose")
+            >>> found.id if found else None
+            'CHEBI:12345'
+            >>> found = ontology.find_terms_by_name("GLUCOSE")
+            >>> found.id if found else None
+            'CHEBI:12345'
+        """
+        if not name:
+            return None
+
+        search_key = name.strip() if case_sensitive else name.lower().strip()
+        if not search_key:
+            return None
+
+        term_id = self._name_index.get(search_key)
+        if term_id:
+            return self.terms.get(term_id)
+        return None
+
+    def find_terms_by_synonym(
+        self, synonym: str, case_sensitive: bool = False
+    ) -> List[Term]:
+        """
+        Find terms by synonym using the synonym index for fast lookup.
+
+        Args:
+            synonym (str): The synonym to search for
+            case_sensitive (bool): Whether to perform case-sensitive matching (default False)
+
+        Returns:
+            List[Term]: List of terms that have the given synonym
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose", synonyms=["dextrose", "blood sugar"])
+            >>> ontology.add_term(term)
+            True
+            >>> found = ontology.find_terms_by_synonym("dextrose")
+            >>> len(found)
+            1
+            >>> found[0].name
+            'glucose'
+        """
+        if not synonym:
+            return []
+
+        search_key = synonym.strip() if case_sensitive else synonym.lower().strip()
+        if not search_key:
+            return []
+
+        term_ids = self._synonym_index.get(search_key, [])
+        return [self.terms[term_id] for term_id in term_ids if term_id in self.terms]
+
+    def find_terms_by_namespace(self, namespace: str) -> List[Term]:
+        """
+        Find all terms in a specific namespace using the namespace index for fast lookup.
+
+        Args:
+            namespace (str): The namespace to search for
+
+        Returns:
+            List[Term]: List of terms in the given namespace
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term1 = Term(id="CHEBI:12345", name="glucose", namespace="chemical")
+            >>> term2 = Term(id="GO:0008150", name="biological_process", namespace="biological_process")
+            >>> ontology.add_term(term1)
+            True
+            >>> ontology.add_term(term2)
+            True
+            >>> chem_terms = ontology.find_terms_by_namespace("chemical")
+            >>> len(chem_terms)
+            1
+            >>> chem_terms[0].name
+            'glucose'
+        """
+        if not namespace:
+            return []
+
+        namespace_key = namespace.strip()
+        if not namespace_key:
+            return []
+
+        term_ids = self._namespace_index.get(namespace_key, [])
+        return [self.terms[term_id] for term_id in term_ids if term_id in self.terms]
+
+    def find_term_by_alt_id(self, alt_id: str) -> Optional[Term]:
+        """
+        Find a term by its alternative ID using the alternative ID index for fast lookup.
+
+        Args:
+            alt_id (str): The alternative ID to search for
+
+        Returns:
+            Optional[Term]: The term with the given alternative ID, None if not found
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose", alt_ids=["CHEBI:4167"])
+            >>> ontology.add_term(term)
+            True
+            >>> found = ontology.find_term_by_alt_id("CHEBI:4167")
+            >>> found.id if found else None
+            'CHEBI:12345'
+        """
+        if not alt_id:
+            return None
+
+        alt_id_key = alt_id.strip()
+        if not alt_id_key:
+            return None
+
+        term_id = self._alt_id_index.get(alt_id_key)
+        if term_id:
+            return self.terms.get(term_id)
+        return None
+
+    def get_indexed_namespaces(self) -> List[str]:
+        """
+        Get all namespaces that have terms in the ontology.
+
+        Returns:
+            List[str]: List of namespaces with terms
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term1 = Term(id="CHEBI:12345", name="glucose", namespace="chemical")
+            >>> term2 = Term(id="GO:0008150", name="biological_process", namespace="biological_process")
+            >>> ontology.add_term(term1)
+            True
+            >>> ontology.add_term(term2)
+            True
+            >>> namespaces = ontology.get_indexed_namespaces()
+            >>> "chemical" in namespaces
+            True
+            >>> "biological_process" in namespaces
+            True
+        """
+        return list(self._namespace_index.keys())
+
+    def rebuild_indexes(self) -> None:
+        """
+        Rebuild all term indexes from scratch.
+
+        This method completely rebuilds all internal indexes used for efficient term lookups.
+        It should be called if the indexes become inconsistent or after bulk modifications
+        to terms that bypass the normal add_term/remove_term methods.
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose")
+            >>> ontology.terms["CHEBI:12345"] = term  # Direct manipulation bypasses indexing
+            >>> ontology.rebuild_indexes()  # Rebuild indexes to be consistent
+            >>> found = ontology.find_terms_by_name("glucose")
+            >>> found.id if found else None
+            'CHEBI:12345'
+        """
+        self._build_indexes()
 
     def add_relationship(self, relationship: Relationship) -> bool:
         """
@@ -2931,6 +3129,169 @@ class Ontology:
         """
         self.term_count = len(self.terms)
         self.relationship_count = len(self.relationships)
+
+    def _build_indexes(self) -> None:
+        """
+        Build all term indexes from current terms.
+
+        This method reconstructs all internal indexes used for efficient term lookups.
+        It should be called after bulk modifications to the terms dictionary or when
+        indexes need to be rebuilt from scratch.
+
+        The following indexes are built:
+        - _name_index: Maps term names to term IDs for fast name-based lookups
+        - _synonym_index: Maps synonyms to lists of term IDs that use them
+        - _namespace_index: Maps namespaces to lists of term IDs in that namespace
+        - _alt_id_index: Maps alternative IDs to the primary term IDs
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose", synonyms=["dextrose"])
+            >>> ontology.terms["CHEBI:12345"] = term
+            >>> ontology._build_indexes()
+            >>> "glucose" in ontology._name_index
+            True
+            >>> "dextrose" in ontology._synonym_index
+            True
+        """
+        # Clear existing indexes
+        self._name_index.clear()
+        self._synonym_index.clear()
+        self._namespace_index.clear()
+        self._alt_id_index.clear()
+
+        # Build indexes from current terms
+        for term_id, term in self.terms.items():
+            # Index by name (case-insensitive for better matching)
+            if term.name:
+                name_key = term.name.lower().strip()
+                if name_key:
+                    self._name_index[name_key] = term_id
+
+            # Index by synonyms (case-insensitive)
+            for synonym in term.synonyms:
+                if synonym:
+                    synonym_key = synonym.lower().strip()
+                    if synonym_key:
+                        if synonym_key not in self._synonym_index:
+                            self._synonym_index[synonym_key] = []
+                        self._synonym_index[synonym_key].append(term_id)
+
+            # Index by namespace
+            if term.namespace:
+                namespace_key = term.namespace.strip()
+                if namespace_key:
+                    if namespace_key not in self._namespace_index:
+                        self._namespace_index[namespace_key] = []
+                    self._namespace_index[namespace_key].append(term_id)
+
+            # Index by alternative IDs
+            for alt_id in term.alt_ids:
+                if alt_id and alt_id != term_id:
+                    alt_id_key = alt_id.strip()
+                    if alt_id_key:
+                        self._alt_id_index[alt_id_key] = term_id
+
+    def _add_term_to_indexes(self, term: Term) -> None:
+        """
+        Add a single term to all indexes.
+
+        This method updates all internal indexes when a new term is added to the ontology.
+        It's more efficient than rebuilding all indexes when only one term is added.
+
+        Args:
+            term (Term): The term to add to indexes
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose", synonyms=["dextrose"])
+            >>> ontology._add_term_to_indexes(term)
+            >>> "glucose" in ontology._name_index
+            True
+        """
+        # Index by name (case-insensitive for better matching)
+        if term.name:
+            name_key = term.name.lower().strip()
+            if name_key:
+                self._name_index[name_key] = term.id
+
+        # Index by synonyms (case-insensitive)
+        for synonym in term.synonyms:
+            if synonym:
+                synonym_key = synonym.lower().strip()
+                if synonym_key:
+                    if synonym_key not in self._synonym_index:
+                        self._synonym_index[synonym_key] = []
+                    self._synonym_index[synonym_key].append(term.id)
+
+        # Index by namespace
+        if term.namespace:
+            namespace_key = term.namespace.strip()
+            if namespace_key:
+                if namespace_key not in self._namespace_index:
+                    self._namespace_index[namespace_key] = []
+                self._namespace_index[namespace_key].append(term.id)
+
+        # Index by alternative IDs
+        for alt_id in term.alt_ids:
+            if alt_id and alt_id != term.id:
+                alt_id_key = alt_id.strip()
+                if alt_id_key:
+                    self._alt_id_index[alt_id_key] = term.id
+
+    def _remove_term_from_indexes(self, term: Term) -> None:
+        """
+        Remove a single term from all indexes.
+
+        This method updates all internal indexes when a term is removed from the ontology.
+        It cleans up all references to the term from the various indexes.
+
+        Args:
+            term (Term): The term to remove from indexes
+
+        Examples:
+            >>> ontology = Ontology(id="ONT:001", name="Test Ontology")
+            >>> term = Term(id="CHEBI:12345", name="glucose", synonyms=["dextrose"])
+            >>> ontology._add_term_to_indexes(term)
+            >>> ontology._remove_term_from_indexes(term)
+            >>> "glucose" in ontology._name_index
+            False
+        """
+        # Remove from name index (case-insensitive)
+        if term.name:
+            name_key = term.name.lower().strip()
+            if name_key and name_key in self._name_index:
+                if self._name_index[name_key] == term.id:
+                    del self._name_index[name_key]
+
+        # Remove from synonym index (case-insensitive)
+        for synonym in term.synonyms:
+            if synonym:
+                synonym_key = synonym.lower().strip()
+                if synonym_key and synonym_key in self._synonym_index:
+                    if term.id in self._synonym_index[synonym_key]:
+                        self._synonym_index[synonym_key].remove(term.id)
+                    # Remove the synonym key if no terms use it anymore
+                    if not self._synonym_index[synonym_key]:
+                        del self._synonym_index[synonym_key]
+
+        # Remove from namespace index
+        if term.namespace:
+            namespace_key = term.namespace.strip()
+            if namespace_key and namespace_key in self._namespace_index:
+                if term.id in self._namespace_index[namespace_key]:
+                    self._namespace_index[namespace_key].remove(term.id)
+                # Remove the namespace key if no terms use it anymore
+                if not self._namespace_index[namespace_key]:
+                    del self._namespace_index[namespace_key]
+
+        # Remove from alternative ID index
+        for alt_id in term.alt_ids:
+            if alt_id and alt_id != term.id:
+                alt_id_key = alt_id.strip()
+                if alt_id_key and alt_id_key in self._alt_id_index:
+                    if self._alt_id_index[alt_id_key] == term.id:
+                        del self._alt_id_index[alt_id_key]
 
     def get_statistics(self) -> Dict[str, Any]:
         """

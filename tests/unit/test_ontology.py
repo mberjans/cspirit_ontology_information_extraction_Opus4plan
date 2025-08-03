@@ -14,6 +14,7 @@ Test Classes:
     TestOntologyEdgeCases: Tests for edge cases and error handling
     TestOntologySpecific: Tests for ontology-specific functionality
     TestOntologyIntegration: Integration tests using fixtures
+    TestOntologyTermIndexing: Tests for term indexing functionality
 
 The Ontology class is expected to be a dataclass representing complete ontologies with:
 - Core attributes: id, name, version, description, terms, relationships, namespaces, metadata
@@ -31,6 +32,15 @@ Container Operations:
     - Merging and integration with other ontologies
     - Export/import functionality
 
+Term Indexing Operations:
+    - Fast term lookup by name: find_terms_by_name()
+    - Fast term lookup by synonym: find_terms_by_synonym()
+    - Fast term lookup by namespace: find_terms_by_namespace()
+    - Fast term lookup by alternative ID: find_term_by_alt_id()
+    - Namespace enumeration: get_indexed_namespaces()
+    - Index rebuilding: rebuild_indexes()
+    - Automatic index maintenance during term add/remove operations
+
 Dependencies:
     - pytest: For test framework
     - unittest.mock: For mocking functionality
@@ -46,9 +56,8 @@ import pytest
 from unittest.mock import Mock
 
 
-# Note: The Ontology class doesn't exist yet - these tests define its expected behavior
-# The import will be uncommented once the class is implemented
-# from aim2_project.aim2_ontology.models import Ontology
+# Note: The Ontology class has been implemented
+from aim2_project.aim2_ontology.models import Ontology, Term
 
 
 class TestOntologyCreation:
@@ -1065,3 +1074,690 @@ class TestOntologyIntegration:
 
         assert dict_result["term_count"] == 1000
         assert "ONT:002" in json_result
+
+
+class TestOntologyTermIndexing:
+    """Test term indexing functionality in the Ontology class."""
+
+    @pytest.fixture
+    def ontology(self):
+        """Create a test ontology instance."""
+        return Ontology(id="ONT:001", name="Test Indexing Ontology")
+
+    @pytest.fixture
+    def sample_terms(self):
+        """Create sample terms for testing."""
+        return [
+            Term(
+                id="CHEBI:12345",
+                name="glucose",
+                synonyms=["dextrose", "blood sugar", "D-glucose"],
+                namespace="chemical",
+                alt_ids=["CHEBI:4167", "CHEBI:17634"],
+            ),
+            Term(
+                id="CHEBI:33917",
+                name="aldohexose",
+                synonyms=["aldose hexose"],
+                namespace="chemical",
+                alt_ids=["CHEBI:22314"],
+            ),
+            Term(
+                id="GO:0008150",
+                name="biological_process",
+                synonyms=["biological process", "physiological process"],
+                namespace="biological_process",
+                alt_ids=["GO:BP"],
+            ),
+            Term(
+                id="GO:0003674",
+                name="molecular_function",
+                synonyms=["molecular function"],
+                namespace="molecular_function",
+                alt_ids=["GO:MF"],
+            ),
+        ]
+
+    def test_find_terms_by_name_case_insensitive_default(self, ontology, sample_terms):
+        """Test finding terms by name with default case-insensitive search."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test exact case match
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+        assert found.name == "glucose"
+
+        # Test case-insensitive match
+        found = ontology.find_terms_by_name("GLUCOSE")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_name("Glucose")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        # Test with underscores
+        found = ontology.find_terms_by_name("biological_process")
+        assert found is not None
+        assert found.id == "GO:0008150"
+
+        found = ontology.find_terms_by_name("BIOLOGICAL_PROCESS")
+        assert found is not None
+        assert found.id == "GO:0008150"
+
+    def test_find_terms_by_name_case_sensitive(self, ontology, sample_terms):
+        """Test finding terms by name with case-sensitive search."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test exact case match
+        found = ontology.find_terms_by_name("glucose", case_sensitive=True)
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        # Test case-sensitive no match
+        found = ontology.find_terms_by_name("GLUCOSE", case_sensitive=True)
+        assert found is None
+
+        found = ontology.find_terms_by_name("Glucose", case_sensitive=True)
+        assert found is None
+
+    def test_find_terms_by_name_edge_cases(self, ontology, sample_terms):
+        """Test finding terms by name with edge cases."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test empty string
+        found = ontology.find_terms_by_name("")
+        assert found is None
+
+        # Test None (should not crash)
+        found = ontology.find_terms_by_name(None)
+        assert found is None
+
+        # Test whitespace only
+        found = ontology.find_terms_by_name("   ")
+        assert found is None
+
+        # Test non-existent term
+        found = ontology.find_terms_by_name("non_existent_term")
+        assert found is None
+
+        # Test whitespace around valid name
+        found = ontology.find_terms_by_name("  glucose  ")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+    def test_find_terms_by_synonym_case_insensitive_default(
+        self, ontology, sample_terms
+    ):
+        """Test finding terms by synonym with default case-insensitive search."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test exact case match
+        found = ontology.find_terms_by_synonym("dextrose")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        # Test case-insensitive match
+        found = ontology.find_terms_by_synonym("DEXTROSE")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_synonym("Blood Sugar")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        # Test synonym that appears in multiple terms (none in current sample)
+        found = ontology.find_terms_by_synonym("biological process")
+        assert len(found) == 1
+        assert found[0].id == "GO:0008150"
+
+    def test_find_terms_by_synonym_case_sensitive(self, ontology, sample_terms):
+        """Test finding terms by synonym with case-sensitive search."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test exact case match
+        found = ontology.find_terms_by_synonym("dextrose", case_sensitive=True)
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        # Test case-sensitive no match
+        found = ontology.find_terms_by_synonym("DEXTROSE", case_sensitive=True)
+        assert len(found) == 0
+
+        found = ontology.find_terms_by_synonym("Blood Sugar", case_sensitive=True)
+        assert len(found) == 0
+
+    def test_find_terms_by_synonym_multiple_matches(self, ontology):
+        """Test finding terms by synonym when multiple terms share the same synonym."""
+        # Create terms with shared synonyms
+        term1 = Term(
+            id="TERM:001",
+            name="term_one",
+            synonyms=["shared_synonym", "unique_syn1"],
+            namespace="test",
+        )
+        term2 = Term(
+            id="TERM:002",
+            name="term_two",
+            synonyms=["shared_synonym", "unique_syn2"],
+            namespace="test",
+        )
+
+        ontology.add_term(term1)
+        ontology.add_term(term2)
+
+        # Test shared synonym returns both terms
+        found = ontology.find_terms_by_synonym("shared_synonym")
+        assert len(found) == 2
+        found_ids = {term.id for term in found}
+        assert found_ids == {"TERM:001", "TERM:002"}
+
+        # Test unique synonyms return single term
+        found = ontology.find_terms_by_synonym("unique_syn1")
+        assert len(found) == 1
+        assert found[0].id == "TERM:001"
+
+        found = ontology.find_terms_by_synonym("unique_syn2")
+        assert len(found) == 1
+        assert found[0].id == "TERM:002"
+
+    def test_find_terms_by_synonym_edge_cases(self, ontology, sample_terms):
+        """Test finding terms by synonym with edge cases."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test empty string
+        found = ontology.find_terms_by_synonym("")
+        assert len(found) == 0
+
+        # Test None (should not crash)
+        found = ontology.find_terms_by_synonym(None)
+        assert len(found) == 0
+
+        # Test whitespace only
+        found = ontology.find_terms_by_synonym("   ")
+        assert len(found) == 0
+
+        # Test non-existent synonym
+        found = ontology.find_terms_by_synonym("non_existent_synonym")
+        assert len(found) == 0
+
+        # Test whitespace around valid synonym
+        found = ontology.find_terms_by_synonym("  blood sugar  ")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+    def test_find_terms_by_namespace(self, ontology, sample_terms):
+        """Test finding terms by namespace."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test finding chemical terms
+        found = ontology.find_terms_by_namespace("chemical")
+        assert len(found) == 2
+        found_ids = {term.id for term in found}
+        assert found_ids == {"CHEBI:12345", "CHEBI:33917"}
+
+        # Test finding biological process terms
+        found = ontology.find_terms_by_namespace("biological_process")
+        assert len(found) == 1
+        assert found[0].id == "GO:0008150"
+
+        # Test finding molecular function terms
+        found = ontology.find_terms_by_namespace("molecular_function")
+        assert len(found) == 1
+        assert found[0].id == "GO:0003674"
+
+        # Test non-existent namespace
+        found = ontology.find_terms_by_namespace("non_existent_namespace")
+        assert len(found) == 0
+
+    def test_find_terms_by_namespace_edge_cases(self, ontology, sample_terms):
+        """Test finding terms by namespace with edge cases."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test empty string
+        found = ontology.find_terms_by_namespace("")
+        assert len(found) == 0
+
+        # Test None (should not crash)
+        found = ontology.find_terms_by_namespace(None)
+        assert len(found) == 0
+
+        # Test whitespace only
+        found = ontology.find_terms_by_namespace("   ")
+        assert len(found) == 0
+
+        # Test whitespace around valid namespace
+        found = ontology.find_terms_by_namespace("  chemical  ")
+        assert len(found) == 2
+
+    def test_find_term_by_alt_id(self, ontology, sample_terms):
+        """Test finding terms by alternative ID."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test finding glucose by alt_id
+        found = ontology.find_term_by_alt_id("CHEBI:4167")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+        assert found.name == "glucose"
+
+        found = ontology.find_term_by_alt_id("CHEBI:17634")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        # Test finding aldohexose by alt_id
+        found = ontology.find_term_by_alt_id("CHEBI:22314")
+        assert found is not None
+        assert found.id == "CHEBI:33917"
+
+        # Test finding GO terms by alt_id
+        found = ontology.find_term_by_alt_id("GO:BP")
+        assert found is not None
+        assert found.id == "GO:0008150"
+
+        found = ontology.find_term_by_alt_id("GO:MF")
+        assert found is not None
+        assert found.id == "GO:0003674"
+
+    def test_find_term_by_alt_id_edge_cases(self, ontology, sample_terms):
+        """Test finding terms by alternative ID with edge cases."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Test empty string
+        found = ontology.find_term_by_alt_id("")
+        assert found is None
+
+        # Test None (should not crash)
+        found = ontology.find_term_by_alt_id(None)
+        assert found is None
+
+        # Test whitespace only
+        found = ontology.find_term_by_alt_id("   ")
+        assert found is None
+
+        # Test non-existent alt_id
+        found = ontology.find_term_by_alt_id("NON:EXISTENT")
+        assert found is None
+
+        # Test whitespace around valid alt_id
+        found = ontology.find_term_by_alt_id("  CHEBI:4167  ")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        # Test alt_id that matches primary ID (should not match via alt_id index)
+        found = ontology.find_term_by_alt_id("CHEBI:12345")
+        assert found is None  # Primary IDs are not indexed as alt_ids
+
+    def test_get_indexed_namespaces(self, ontology, sample_terms):
+        """Test getting all indexed namespaces."""
+        # Empty ontology should have no namespaces
+        namespaces = ontology.get_indexed_namespaces()
+        assert len(namespaces) == 0
+
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Should have all unique namespaces
+        namespaces = ontology.get_indexed_namespaces()
+        expected_namespaces = {"chemical", "biological_process", "molecular_function"}
+        assert set(namespaces) == expected_namespaces
+
+    def test_get_indexed_namespaces_with_none_namespace_terms(self, ontology):
+        """Test getting indexed namespaces when some terms have None namespace."""
+        # Add terms with and without namespaces
+        term1 = Term(id="TERM:001", name="term_with_namespace", namespace="test")
+        term2 = Term(id="TERM:002", name="term_without_namespace", namespace=None)
+        term3 = Term(id="TERM:003", name="term_empty_namespace", namespace="")
+
+        ontology.add_term(term1)
+        ontology.add_term(term2)
+        ontology.add_term(term3)
+
+        # Should only include non-empty namespaces
+        namespaces = ontology.get_indexed_namespaces()
+        assert namespaces == ["test"]
+
+    def test_rebuild_indexes(self, ontology, sample_terms):
+        """Test rebuilding indexes from scratch."""
+        # Add terms to ontology
+        for term in sample_terms:
+            ontology.add_term(term)
+
+        # Verify indexes work before rebuild
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+
+        # Manually corrupt indexes to test rebuild
+        ontology._name_index.clear()
+        ontology._synonym_index.clear()
+        ontology._namespace_index.clear()
+        ontology._alt_id_index.clear()
+
+        # Verify indexes are broken
+        found = ontology.find_terms_by_name("glucose")
+        assert found is None
+
+        # Rebuild indexes
+        ontology.rebuild_indexes()
+
+        # Verify indexes work again
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_synonym("dextrose")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_namespace("chemical")
+        assert len(found) == 2
+
+        found = ontology.find_term_by_alt_id("CHEBI:4167")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+    def test_automatic_index_maintenance_add_term(self, ontology):
+        """Test that indexes are automatically updated when terms are added."""
+        # Create a term
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            synonyms=["dextrose"],
+            namespace="chemical",
+            alt_ids=["CHEBI:4167"],
+        )
+
+        # Verify term is not indexed before adding
+        found = ontology.find_terms_by_name("glucose")
+        assert found is None
+
+        # Add term
+        success = ontology.add_term(term)
+        assert success is True
+
+        # Verify term is now indexed
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_synonym("dextrose")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        found = ontology.find_terms_by_namespace("chemical")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        found = ontology.find_term_by_alt_id("CHEBI:4167")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+
+    def test_automatic_index_maintenance_remove_term(self, ontology):
+        """Test that indexes are automatically updated when terms are removed."""
+        # Create and add a term
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            synonyms=["dextrose"],
+            namespace="chemical",
+            alt_ids=["CHEBI:4167"],
+        )
+        ontology.add_term(term)
+
+        # Verify term is indexed
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+
+        # Remove term
+        success = ontology.remove_term("CHEBI:12345")
+        assert success is True
+
+        # Verify term is no longer indexed
+        found = ontology.find_terms_by_name("glucose")
+        assert found is None
+
+        found = ontology.find_terms_by_synonym("dextrose")
+        assert len(found) == 0
+
+        found = ontology.find_terms_by_namespace("chemical")
+        assert len(found) == 0
+
+        found = ontology.find_term_by_alt_id("CHEBI:4167")
+        assert found is None
+
+    def test_index_maintenance_with_shared_synonyms(self, ontology):
+        """Test index maintenance when multiple terms share synonyms."""
+        # Create terms with shared synonym
+        term1 = Term(
+            id="TERM:001",
+            name="term_one",
+            synonyms=["shared_synonym", "unique1"],
+            namespace="test",
+        )
+        term2 = Term(
+            id="TERM:002",
+            name="term_two",
+            synonyms=["shared_synonym", "unique2"],
+            namespace="test",
+        )
+
+        # Add both terms
+        ontology.add_term(term1)
+        ontology.add_term(term2)
+
+        # Verify both terms are found by shared synonym
+        found = ontology.find_terms_by_synonym("shared_synonym")
+        assert len(found) == 2
+
+        # Remove first term
+        ontology.remove_term("TERM:001")
+
+        # Verify shared synonym still finds second term
+        found = ontology.find_terms_by_synonym("shared_synonym")
+        assert len(found) == 1
+        assert found[0].id == "TERM:002"
+
+        # Verify unique synonym of removed term is gone
+        found = ontology.find_terms_by_synonym("unique1")
+        assert len(found) == 0
+
+        # Remove second term
+        ontology.remove_term("TERM:002")
+
+        # Verify shared synonym no longer finds any terms
+        found = ontology.find_terms_by_synonym("shared_synonym")
+        assert len(found) == 0
+
+    def test_index_maintenance_with_shared_namespaces(self, ontology):
+        """Test index maintenance when multiple terms share namespaces."""
+        # Create terms in same namespace
+        term1 = Term(id="TERM:001", name="term_one", namespace="shared_namespace")
+        term2 = Term(id="TERM:002", name="term_two", namespace="shared_namespace")
+
+        # Add both terms
+        ontology.add_term(term1)
+        ontology.add_term(term2)
+
+        # Verify both terms are found by namespace
+        found = ontology.find_terms_by_namespace("shared_namespace")
+        assert len(found) == 2
+
+        # Verify namespace is in indexed namespaces
+        namespaces = ontology.get_indexed_namespaces()
+        assert "shared_namespace" in namespaces
+
+        # Remove first term
+        ontology.remove_term("TERM:001")
+
+        # Verify namespace still finds second term
+        found = ontology.find_terms_by_namespace("shared_namespace")
+        assert len(found) == 1
+        assert found[0].id == "TERM:002"
+
+        # Verify namespace is still indexed
+        namespaces = ontology.get_indexed_namespaces()
+        assert "shared_namespace" in namespaces
+
+        # Remove second term
+        ontology.remove_term("TERM:002")
+
+        # Verify namespace no longer finds any terms
+        found = ontology.find_terms_by_namespace("shared_namespace")
+        assert len(found) == 0
+
+        # Verify namespace is no longer indexed
+        namespaces = ontology.get_indexed_namespaces()
+        assert "shared_namespace" not in namespaces
+
+    def test_integration_with_existing_term_objects(self, ontology):
+        """Test that indexing integrates properly with existing Term objects."""
+        # Create a term with all indexable attributes
+        term = Term(
+            id="CHEBI:12345",
+            name="glucose",
+            definition="A monosaccharide",
+            synonyms=["dextrose", "blood sugar", "D-glucose"],
+            namespace="chemical",
+            alt_ids=["CHEBI:4167", "CHEBI:17634"],
+            xrefs=["CAS:50-99-7"],
+            parents=["CHEBI:33917"],
+            children=["CHEBI:4167"],
+            relationships={"is_a": ["CHEBI:33917"]},
+            metadata={"source": "ChEBI"},
+        )
+
+        # Add term to ontology
+        ontology.add_term(term)
+
+        # Test that all indexable attributes work
+        # Name
+        found = ontology.find_terms_by_name("glucose")
+        assert found is not None
+        assert found.id == "CHEBI:12345"
+        assert found.definition == "A monosaccharide"
+        assert found.xrefs == ["CAS:50-99-7"]
+        assert found.parents == ["CHEBI:33917"]
+        assert found.metadata == {"source": "ChEBI"}
+
+        # Synonyms
+        for synonym in ["dextrose", "blood sugar", "D-glucose"]:
+            found = ontology.find_terms_by_synonym(synonym)
+            assert len(found) == 1
+            assert found[0].id == "CHEBI:12345"
+
+        # Namespace
+        found = ontology.find_terms_by_namespace("chemical")
+        assert len(found) == 1
+        assert found[0].id == "CHEBI:12345"
+
+        # Alt IDs
+        for alt_id in ["CHEBI:4167", "CHEBI:17634"]:
+            found = ontology.find_term_by_alt_id(alt_id)
+            assert found is not None
+            assert found.id == "CHEBI:12345"
+
+    def test_index_performance_with_large_dataset(self, ontology):
+        """Test indexing performance and correctness with larger datasets."""
+        # Create a larger set of terms
+        terms = []
+        for i in range(100):
+            term = Term(
+                id=f"TERM:{i:06d}",
+                name=f"term_{i}",
+                synonyms=[f"synonym_{i}", f"alt_name_{i}"],
+                namespace=f"namespace_{i % 10}",  # 10 different namespaces
+                alt_ids=[f"ALT:{i:06d}"],
+            )
+            terms.append(term)
+
+        # Add all terms
+        for term in terms:
+            success = ontology.add_term(term)
+            assert success is True
+
+        # Test that all terms can be found by name
+        for i in range(100):
+            found = ontology.find_terms_by_name(f"term_{i}")
+            assert found is not None
+            assert found.id == f"TERM:{i:06d}"
+
+        # Test synonyms
+        for i in range(100):
+            found = ontology.find_terms_by_synonym(f"synonym_{i}")
+            assert len(found) == 1
+            assert found[0].id == f"TERM:{i:06d}"
+
+        # Test namespaces (each namespace should have 10 terms)
+        for ns_idx in range(10):
+            found = ontology.find_terms_by_namespace(f"namespace_{ns_idx}")
+            assert len(found) == 10
+
+        # Test alt_ids
+        for i in range(100):
+            found = ontology.find_term_by_alt_id(f"ALT:{i:06d}")
+            assert found is not None
+            assert found.id == f"TERM:{i:06d}"
+
+        # Test that we have all expected namespaces
+        namespaces = ontology.get_indexed_namespaces()
+        expected_namespaces = {f"namespace_{i}" for i in range(10)}
+        assert set(namespaces) == expected_namespaces
+
+    def test_empty_ontology_index_methods(self, ontology):
+        """Test that index methods handle empty ontology gracefully."""
+        # Empty ontology should return appropriate empty results
+        found = ontology.find_terms_by_name("any_name")
+        assert found is None
+
+        found = ontology.find_terms_by_synonym("any_synonym")
+        assert len(found) == 0
+
+        found = ontology.find_terms_by_namespace("any_namespace")
+        assert len(found) == 0
+
+        found = ontology.find_term_by_alt_id("any_alt_id")
+        assert found is None
+
+        namespaces = ontology.get_indexed_namespaces()
+        assert len(namespaces) == 0
+
+        # Rebuilding indexes on empty ontology should not crash
+        ontology.rebuild_indexes()
+
+    def test_invalid_term_handling(self, ontology):
+        """Test that invalid terms are not indexed."""
+        # Create an invalid term (this depends on Term validation)
+        # Assuming empty name makes a term invalid
+        try:
+            invalid_term = Term(id="INVALID:001", name="")
+            add_result = ontology.add_term(invalid_term)
+            # If term validation prevents adding invalid terms
+            if not add_result:
+                # Verify term was not indexed
+                found = ontology.find_terms_by_name("")
+                assert found is None
+                assert len(ontology.terms) == 0
+        except (ValueError, TypeError):
+            # If Term constructor prevents invalid terms, that's also valid
+            pass

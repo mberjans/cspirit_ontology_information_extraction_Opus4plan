@@ -68,7 +68,7 @@
 - [x] **AIM2-011-06** Create Relationship dataclass
 - [x] **AIM2-011-07** Implement relationship validation
 - [x] **AIM2-011-08** Create Ontology container class
-- [ ] **AIM2-011-09** Add term indexing functionality
+- [x] **AIM2-011-09** Add term indexing functionality
 - [ ] **AIM2-011-10** Implement serialization to JSON
 - [ ] **AIM2-011-11** Implement deserialization from JSON
 - [ ] **AIM2-011-12** Add equality and hashing methods
