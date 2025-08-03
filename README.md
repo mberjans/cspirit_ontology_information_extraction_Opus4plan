@@ -59,36 +59,330 @@ aim2_project/
     └── default_config.yaml    # Default settings template
 ```
 
-## Installation
+## Environment Setup
+
+This section provides comprehensive instructions for setting up the AIM2 development and production environments. The project includes automated setup scripts, development tools, and code quality checks.
 
 ### Prerequisites
-- Python 3.8 or higher
-- Virtual environment (recommended)
 
-### Setup Instructions
+Before installing AIM2, ensure you have the following system requirements:
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd cspirit_ontology_information_extraction_Opus4plan
-   ```
+#### System Requirements
+- **Python**: 3.8 to 3.12 (tested on all versions)
+- **Operating System**: Linux, macOS, or Windows
+- **Memory**: Minimum 8GB RAM (16GB+ recommended for ML models)
+- **Storage**: At least 2GB free space for dependencies and data
 
-2. **Create and activate virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+#### Python Installation
+```bash
+# Check your Python version
+python --version  # or python3 --version
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r aim2_project/requirements.txt
-   ```
+# If Python is not installed or version < 3.8:
+# Ubuntu/Debian: sudo apt update && sudo apt install python3 python3-pip python3-venv
+# macOS: brew install python@3.11
+# Windows: Download from https://python.org/downloads/
+```
 
-4. **Configure the system**:
-   ```bash
-   cp aim2_project/configs/default_config.yaml config.yaml
-   # Edit config.yaml with your LLM API keys and preferences
-   ```
+### Installation Methods
+
+#### Method 1: Quick Setup (Recommended)
+
+Use the automated setup script for the fastest installation:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cspirit_ontology_information_extraction_Opus4plan
+
+# Run the automated setup script
+./setup_env.sh
+
+# The script will:
+# - Check Python version compatibility
+# - Create virtual environment
+# - Install all dependencies
+# - Set up pre-commit hooks
+# - Configure basic settings
+```
+
+#### Method 2: Manual Setup
+
+For more control over the installation process:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cspirit_ontology_information_extraction_Opus4plan
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Upgrade pip for better dependency resolution
+pip install --upgrade pip setuptools wheel
+
+# Install production dependencies
+pip install -r aim2_project/requirements.txt
+
+# Optional: Install development dependencies
+pip install -r requirements-dev.txt
+
+# Install the package in development mode
+pip install -e .
+```
+
+#### Method 3: Using Makefile (Development Environment)
+
+For developers working on the project:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cspirit_ontology_information_extraction_Opus4plan
+
+# View available commands
+make help
+
+# Set up complete development environment
+make setup-dev
+
+# This will:
+# - Create virtual environment
+# - Install all dependencies (production + development)
+# - Install pre-commit hooks
+# - Run initial code quality checks
+```
+
+#### Method 4: Production-Only Installation
+
+For production deployments without development tools:
+
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install only production dependencies
+pip install -r aim2_project/requirements.txt
+
+# Install the package
+pip install .
+```
+
+### Configuration Setup
+
+#### 1. Basic Configuration
+
+```bash
+# Copy the default configuration template
+cp aim2_project/configs/default_config.yaml config.yaml
+
+# Edit the configuration file with your settings
+# Use your preferred editor: nano, vim, code, etc.
+nano config.yaml
+```
+
+#### 2. LLM API Configuration
+
+Add your API keys to the configuration file:
+
+```yaml
+# config.yaml
+llm:
+  default_model: "llama-70b"
+  api_keys:
+    openai: "your-openai-api-key"        # For GPT models
+    google: "your-google-api-key"        # For Gemini models
+    anthropic: "your-anthropic-api-key"  # For Claude models
+  local_models:
+    llama_path: "/path/to/local/llama/model"  # Optional: for local models
+
+# Environment variables (alternative to config file)
+export OPENAI_API_KEY="your-openai-api-key"
+export GOOGLE_API_KEY="your-google-api-key"
+```
+
+#### 3. Directory Structure Setup
+
+The installation automatically creates the required directory structure:
+
+```
+aim2_project/
+├── data/
+│   ├── ontologies/     # Ontology files will be stored here
+│   ├── corpus/         # Literature corpus storage
+│   ├── synthetic/      # Generated synthetic data
+│   └── benchmarks/     # Evaluation benchmarks
+└── configs/
+    └── default_config.yaml  # Configuration template
+```
+
+### Development Environment Setup
+
+#### Installing Pre-commit Hooks
+
+Pre-commit hooks ensure code quality and consistency:
+
+```bash
+# If using Makefile
+make pre-commit-install
+
+# Or manually
+pip install pre-commit
+pre-commit install
+
+# Test the hooks
+pre-commit run --all-files
+```
+
+#### Available Development Commands
+
+```bash
+# Code formatting and quality checks
+make format          # Format code with black and isort
+make lint            # Run linting checks (flake8, pylint)
+make type-check      # Run type checking with mypy
+make security-check  # Run security analysis with bandit
+
+# Testing
+make test           # Run all tests
+make test-cov       # Run tests with coverage report
+make test-fast      # Run tests in parallel
+
+# Documentation
+make docs           # Build documentation
+make docs-serve     # Serve documentation locally
+
+# Environment management
+make clean          # Clean build artifacts
+make clean-all      # Clean everything including venv
+make update-deps    # Update all dependencies
+```
+
+### Installation Verification
+
+#### 1. Basic Installation Check
+
+```bash
+# Verify Python environment
+python --version
+which python
+
+# Check package installation
+python -c "import aim2_project; print('Installation successful!')"
+
+# Test CLI commands
+aim2-ontology-manager --help
+aim2-ner-extractor --help
+```
+
+#### 2. Run Basic Tests
+
+```bash
+# Quick functionality test
+python -c "
+from aim2_ontology import OntologyManager
+from aim2_extraction import NERExtractor
+print('Core modules imported successfully!')
+"
+
+# If development environment is set up
+make test-fast
+```
+
+#### 3. Validate Configuration
+
+```bash
+# Check configuration loading
+python -c "
+from aim2_utils.config_manager import ConfigManager
+config = ConfigManager('config.yaml')
+print('Configuration loaded successfully!')
+"
+```
+
+### Troubleshooting
+
+#### Common Installation Issues
+
+**Python Version Compatibility**
+```bash
+# Error: "Python 3.x is not supported"
+# Solution: Install Python 3.8-3.12
+pyenv install 3.11.0  # If using pyenv
+pyenv local 3.11.0
+```
+
+**Virtual Environment Issues**
+```bash
+# Error: "venv module not found"
+# Ubuntu/Debian: sudo apt install python3-venv
+# macOS: Already included with Python 3.3+
+# Windows: Included with Python from python.org
+
+# Error: "Permission denied"
+# Windows: Run command prompt as administrator
+# Linux/macOS: Check directory permissions
+```
+
+**Dependency Conflicts**
+```bash
+# Clear pip cache and reinstall
+pip cache purge
+pip install --upgrade --force-reinstall -r aim2_project/requirements.txt
+
+# For torch/CUDA issues
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+**Memory Issues During Installation**
+```bash
+# For systems with limited memory
+pip install --no-cache-dir -r aim2_project/requirements.txt
+
+# Install dependencies one by one if needed
+pip install transformers torch spacy scikit-learn
+```
+
+#### Platform-Specific Notes
+
+**Windows**
+- Use `venv\Scripts\activate` instead of `source venv/bin/activate`
+- Some packages may require Microsoft Visual C++ Build Tools
+- Long path support may need to be enabled for deep directory structures
+
+**macOS**
+- Install Xcode Command Line Tools: `xcode-select --install`
+- Use Homebrew for Python installation: `brew install python@3.11`
+- M1/M2 Macs may need specific PyTorch builds
+
+**Linux**
+- Install system dependencies: `sudo apt update && sudo apt install build-essential python3-dev`
+- For GPU support: Install CUDA toolkit if needed
+- Check available memory: `free -h`
+
+#### Getting Help
+
+If you encounter issues:
+
+1. **Check system requirements** and ensure Python 3.8-3.12 is installed
+2. **Review error messages** carefully - they often contain specific solutions
+3. **Search existing issues** in the project repository
+4. **Create a new issue** with:
+   - Operating system and version
+   - Python version (`python --version`)
+   - Complete error message
+   - Steps to reproduce the problem
+
+### Hardware Recommendations
+
+For optimal performance:
+
+- **CPU**: Multi-core processor (4+ cores recommended)
+- **RAM**: 16GB+ for processing large ontologies and ML models
+- **Storage**: SSD recommended for faster I/O operations
+- **GPU**: Optional but beneficial for local LLM inference (CUDA-compatible)
 
 ## Quick Start
 
