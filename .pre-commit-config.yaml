@@ -1,0 +1,319 @@
+# AIM2 Ontology Information Extraction Project - Pre-commit Configuration
+#
+# This configuration defines pre-commit hooks that run automatically before commits
+# to ensure code quality, consistency, and security standards.
+#
+# Installation: make pre-commit-install
+# Manual run: make pre-commit-run
+# Update hooks: make pre-commit-update
+
+repos:
+  # ====================================================================
+  # Basic file checks and cleanup
+  # ====================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        description: Remove trailing whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: '\.patch$'
+
+      - id: end-of-file-fixer
+        description: Ensure files end with newline
+        exclude: '\.patch$'
+
+      - id: check-yaml
+        description: Validate YAML files
+        args: [--allow-multiple-documents]
+        exclude: '^docs/.*\.ya?ml$'
+
+      - id: check-json
+        description: Validate JSON files
+
+      - id: check-toml
+        description: Validate TOML files
+
+      - id: check-xml
+        description: Validate XML files
+
+      - id: check-merge-conflict
+        description: Check for merge conflict markers
+
+      - id: check-case-conflict
+        description: Check for case conflicts in filenames
+
+      - id: check-added-large-files
+        description: Prevent large files from being committed
+        args: [--maxkb=500]
+
+      - id: check-symlinks
+        description: Check for broken symlinks
+
+      - id: debug-statements
+        description: Check for debug statements
+        language: python
+        types: [python]
+
+  # ====================================================================
+  # Python-specific file checks
+  # ====================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-ast
+        description: Check Python AST syntax
+
+      - id: check-builtin-literals
+        description: Check for builtin literal usage
+
+      - id: check-docstring-first
+        description: Check docstring placement
+
+      - id: name-tests-test
+        description: Ensure test files are named correctly
+        args: [--pytest-test-first]
+
+  # ====================================================================
+  # Code formatting with Black
+  # ====================================================================
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        description: Format Python code with Black
+        language_version: python3
+        args:
+          - --line-length=88
+          - --target-version=py38
+        files: '\.pyi?$'
+        exclude: |
+          (?x)(
+            /(\.eggs|\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist|migrations)/
+          )
+
+  # ====================================================================
+  # Import sorting with isort
+  # ====================================================================
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        description: Sort Python imports
+        args:
+          - --profile=black
+          - --line-length=88
+          - --multi-line=3
+          - --trailing-comma
+          - --force-grid-wrap=0
+          - --use-parentheses
+          - --ensure-newline-before-comments
+          - --src-paths=aim2_project,tests
+          - --known-first-party=aim2_project
+        files: '\.pyi?$'
+        exclude: |
+          (?x)(
+            /(migrations|venv|env|\.tox|build|dist)/
+          )
+
+  # ====================================================================
+  # Linting with flake8
+  # ====================================================================
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        description: Lint Python code with flake8
+        args:
+          - --max-line-length=88
+          - --max-complexity=10
+          - --select=E,W,F,C,N,B
+          - --ignore=E203,E501,W503,W504,E722,B008
+          - --per-file-ignores=__init__.py:F401,tests/*:S101,D103,conftest.py:D103,setup.py:D100
+          - --application-import-names=aim2_project
+          - --import-order-style=google
+          - --docstring-convention=google
+        additional_dependencies:
+          - flake8-docstrings>=1.7.0
+          - flake8-import-order>=0.18.2
+          - flake8-bugbear>=23.7.0
+          - flake8-comprehensions>=3.14.0
+        files: '\.py$'
+        exclude: |
+          (?x)(
+            /(\.git|__pycache__|\.venv|venv|\.tox|build|dist|\.egg-info|migrations|\.pytest_cache)/
+          )
+
+  # ====================================================================
+  # Type checking with mypy
+  # ====================================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.5.0
+    hooks:
+      - id: mypy
+        description: Type check Python code with mypy
+        args:
+          - --python-version=3.8
+          - --strict
+          - --warn-return-any
+          - --warn-unused-configs
+          - --disallow-untyped-defs
+          - --disallow-incomplete-defs
+          - --check-untyped-defs
+          - --disallow-untyped-decorators
+          - --no-implicit-optional
+          - --warn-redundant-casts
+          - --warn-unused-ignores
+          - --warn-no-return
+          - --warn-unreachable
+          - --strict-equality
+          - --show-error-codes
+          - --show-column-numbers
+          - --pretty
+          - --color-output
+        additional_dependencies:
+          - types-PyYAML>=6.0.0
+          - types-requests>=2.31.0
+          - types-setuptools>=68.0.0
+        files: '^aim2_project/.*\.py$'
+        exclude: '^(tests/|conftest\.py)'
+
+  # ====================================================================
+  # Security scanning with bandit
+  # ====================================================================
+  - repo: https://github.com/pycqa/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        description: Scan for security issues with bandit
+        args:
+          - --recursive
+          - --skip=B101,B601,B602,B603,B607
+        files: '^aim2_project/.*\.py$'
+        exclude: |
+          (?x)(
+            /(tests|venv|\.venv|\.tox|build|dist)/
+          )
+
+  # ====================================================================
+  # Dependency security scanning
+  # ====================================================================
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        description: Scan dependencies for security vulnerabilities
+        files: requirements.*\.txt$
+
+  # ====================================================================
+  # Documentation and configuration validation
+  # ====================================================================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.32.0
+    hooks:
+      - id: yamllint
+        description: Lint YAML files
+        args:
+          - --config-data
+          - |
+            extends: default
+            rules:
+              line-length:
+                max: 88
+              document-start: disable
+              truthy:
+                allowed-values: ['true', 'false', 'yes', 'no']
+        files: '\.(ya?ml)$'
+        exclude: '^docs/.*\.ya?ml$'
+
+  # ====================================================================
+  # Jupyter notebook cleaning (if any notebooks are added)
+  # ====================================================================
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.7.0
+    hooks:
+      - id: nbqa-black
+        description: Format Jupyter notebooks with black
+        args: [--line-length=88]
+        additional_dependencies: [black==23.7.0]
+        files: '\.ipynb$'
+
+      - id: nbqa-isort
+        description: Sort imports in Jupyter notebooks
+        args: [--profile=black]
+        additional_dependencies: [isort==5.12.0]
+        files: '\.ipynb$'
+
+      - id: nbqa-flake8
+        description: Lint Jupyter notebooks
+        args: [--max-line-length=88, --ignore=E203, E501, W503]
+        additional_dependencies: [flake8==6.0.0]
+        files: '\.ipynb$'
+
+  # ====================================================================
+  # Shell script validation
+  # ====================================================================
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.5
+    hooks:
+      - id: shellcheck
+        description: Lint shell scripts
+        args: [--severity=warning]
+        files: '\.(sh|bash)$'
+
+  # ====================================================================
+  # Markdown linting and formatting
+  # ====================================================================
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.35.0
+    hooks:
+      - id: markdownlint
+        description: Lint Markdown files
+        args:
+          - --config=.markdownlint.json
+          - --ignore-path=.markdownlintignore
+        files: '\.md$'
+        exclude: '^(CHANGELOG\.md|\.github/)'
+
+  # ====================================================================
+  # Remove unused imports and variables
+  # ====================================================================
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.2.0
+    hooks:
+      - id: autoflake
+        description: Remove unused imports and variables
+        args:
+          - --in-place
+          - --remove-all-unused-imports
+          - --remove-unused-variables
+          - --remove-duplicate-keys
+          - --ignore-init-module-imports
+        files: '\.py$'
+        exclude: |
+          (?x)(
+            /(migrations|venv|\.venv|\.tox|build|dist)/
+          )
+
+# ====================================================================
+# Pre-commit configuration
+# ====================================================================
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false
+
+# Global settings
+default_language_version:
+  python: python3
+
+# Additional configuration files that might be needed:
+# .markdownlint.json - Markdown linting configuration
+# .markdownlintignore - Files to ignore for markdown linting

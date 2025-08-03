@@ -1,0 +1,40 @@
+# Markdown files to ignore for linting
+
+# Auto-generated files
+CHANGELOG.md
+HISTORY.md
+
+# GitHub templates and workflows
+.github/
+.github/**
+
+# Documentation build artifacts
+docs/_build/
+docs/build/
+
+# Jupyter notebook outputs
+*.ipynb
+
+# Virtual environment
+venv/
+.venv/
+
+# Build directories
+build/
+dist/
+
+# Coverage and test reports
+htmlcov/
+.coverage
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+logs/
+*.log
