@@ -43,10 +43,11 @@ Usage:
     pytest tests/unit/test_owl_parser.py -v
 """
 
-import pytest
-from unittest.mock import Mock, patch
-from pathlib import Path
 import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 
 # Mock the parser classes since they don't exist yet (TDD approach)
@@ -1169,8 +1170,9 @@ class TestRDFTripleModel:
 
     def test_rdf_triple_comprehensive_initialization(self):
         """Test RDFTriple initialization with all fields."""
-        from aim2_project.aim2_ontology.models import RDFTriple
         from datetime import datetime
+
+        from aim2_project.aim2_ontology.models import RDFTriple
 
         created_time = datetime.now()
         metadata = {"source": "test", "method": "parsing"}

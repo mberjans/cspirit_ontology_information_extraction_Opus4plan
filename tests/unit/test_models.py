@@ -33,9 +33,10 @@ Usage:
     pytest tests/unit/test_models.py -v
 """
 
-import pytest
 import json
 from datetime import datetime
+
+import pytest
 
 
 class TestRDFTripleCore:

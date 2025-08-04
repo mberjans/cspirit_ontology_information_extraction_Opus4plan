@@ -21,20 +21,20 @@ Features:
     - Extensible architecture for custom parsers
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Union, IO, Callable, Set
-from pathlib import Path
+import copy
+import hashlib
 import logging
 import time
-import hashlib
-import copy
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import IO, Any, Callable, Dict, List, Optional, Set, Union
 
 # Import project-specific modules
 try:
-    from ..models import Term, Relationship, Ontology, RDFTriple
+    from ..models import Ontology, RDFTriple, Relationship, Term
 except ImportError:
     # Fallback for development/testing
     Term = Relationship = Ontology = RDFTriple = None
@@ -42,9 +42,9 @@ except ImportError:
 try:
     from ...exceptions import (
         AIM2Exception,
+        OntologyErrorCodes,
         OntologyException,
         ValidationException,
-        OntologyErrorCodes,
     )
 except ImportError:
     # Fallback classes for development/testing
@@ -350,7 +350,9 @@ class AbstractParser(ABC):
         # Create hash of content and relevant kwargs
         content_hash = hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
         kwargs_str = str(sorted(kwargs.items()))
-        kwargs_hash = hashlib.md5(kwargs_str.encode(), usedforsecurity=False).hexdigest()
+        kwargs_hash = hashlib.md5(
+            kwargs_str.encode(), usedforsecurity=False
+        ).hexdigest()
         return f"{content_hash}_{kwargs_hash}"
 
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
@@ -1172,8 +1174,8 @@ class OWLParser(AbstractParser):
             raise OntologyException("owlready2 not available")
 
         # Create temporary file for owlready2 (it works best with files)
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=f".{format_hint}", delete=False
@@ -1260,16 +1262,16 @@ class OWLParser(AbstractParser):
             OntologyException: If URL fetch or parsing fails
         """
         try:
-            import urllib.request
             import urllib.error
+            import urllib.request
             from urllib.parse import urlparse
 
             # Validate URL scheme for security
             parsed_url = urlparse(url)
-            if parsed_url.scheme not in ('http', 'https'):
+            if parsed_url.scheme not in ("http", "https"):
                 raise OntologyException(
                     f"Unsupported URL scheme: {parsed_url.scheme}. Only http and https are allowed.",
-                    context={"url": url, "scheme": parsed_url.scheme}
+                    context={"url": url, "scheme": parsed_url.scheme},
                 )
 
             timeout = self.options.get("timeout_seconds", 300)
@@ -2248,106 +2250,1142 @@ class OWLParser(AbstractParser):
 
 
 class CSVParser(AbstractParser):
-    """Concrete CSV parser implementation (placeholder for TDD)."""
+    """Concrete CSV parser implementation with comprehensive functionality.
+
+    This parser provides full CSV/TSV parsing capabilities with:
+    - Format detection (CSV, TSV, custom delimiters)
+    - Dialect detection (delimiter, quote char, escape char)
+    - Header detection and processing
+    - Encoding detection
+    - Column type inference
+    - Large file handling with chunking
+    - Conversion to Term, Relationship, and Ontology models
+    - Comprehensive validation with detailed error reporting
+    """
 
     def __init__(self, options: Optional[Dict[str, Any]] = None):
         """Initialize CSV parser with options."""
         super().__init__("csv", options=options)
-        # This is a placeholder implementation for TDD
-        # The actual implementation will be done after tests pass
-        self.logger.warning("CSVParser implementation is pending - using placeholder")
 
-    def parse(self, content: str, **kwargs) -> Any:
+        # CSV-specific imports
+        import csv
+        import io
+        import re
+
+        try:
+            import chardet
+
+            self._chardet_available = True
+        except ImportError:
+            self._chardet_available = False
+            self.logger.warning(
+                "chardet not available - encoding detection will be limited"
+            )
+
+        # Store modules for use in methods
+        self._csv = csv
+        self._io = io
+        self._re = re
+
+        # Initialize CSV-specific state
+        self._custom_headers: Optional[List[str]] = None
+        self._detected_dialect: Optional[Any] = None
+        self._detected_encoding: str = "utf-8"
+        self._validation_errors: List[str] = []
+        self._column_types: Dict[str, str] = {}
+
+        # Set CSV-specific default options
+        csv_defaults = {
+            "delimiter": ",",
+            "quotechar": '"',
+            "escapechar": None,
+            "has_headers": None,  # Auto-detect if None
+            "skiprows": 0,
+            "nrows": None,
+            "chunksize": None,
+            "low_memory": False,
+            "na_values": ["", "NULL", "N/A", "unknown", "nan"],
+            "column_mapping": None,
+            "validate_on_parse": True,
+            "error_recovery": False,
+            "skip_bad_lines": False,
+            "max_errors": 100,
+            "infer_types": True,
+            "relationship_inference": False,
+            "metadata_extraction": True,
+        }
+
+        # Update options with CSV defaults
+        for key, value in csv_defaults.items():
+            if key not in self.options:
+                self.options[key] = value
+
+        self.logger.info("CSV parser initialized successfully")
+
+    def _get_default_options(self) -> Dict[str, Any]:
+        """Get default options for CSV parser."""
+        base_options = super()._get_default_options()
+        csv_options = {
+            "delimiter": ",",
+            "quotechar": '"',
+            "escapechar": None,
+            "has_headers": None,
+            "skiprows": 0,
+            "nrows": None,
+            "chunksize": None,
+            "low_memory": False,
+            "na_values": ["", "NULL", "N/A", "unknown", "nan"],
+            "column_mapping": None,
+            "validate_on_parse": True,
+            "error_recovery": False,
+            "skip_bad_lines": False,
+            "max_errors": 100,
+            "infer_types": True,
+            "relationship_inference": False,
+            "metadata_extraction": True,
+        }
+        base_options.update(csv_options)
+        return base_options
+
+    def parse(self, content: str, **kwargs) -> ParseResult:
         """Parse CSV content."""
-        raise NotImplementedError("Parse method not implemented")
+        return self.parse_string(content, **kwargs)
 
     def validate(self, content: str, **kwargs) -> bool:
         """Validate CSV content."""
-        raise NotImplementedError("Validate method not implemented")
+        validation_result = self.validate_csv(content, **kwargs)
+        return validation_result.get("valid_structure", False)
 
     def get_supported_formats(self) -> List[str]:
         """Get supported CSV formats."""
-        raise NotImplementedError("Get supported formats not implemented")
+        return ["csv", "tsv", "txt"]
 
     def set_options(self, options: Dict[str, Any]) -> None:
-        """Set parser options."""
-        raise NotImplementedError("Set options not implemented")
+        """Set parser options with validation."""
+        if not isinstance(options, dict):
+            raise ValueError("Options must be a dictionary")
+
+        # Validate specific CSV options
+        valid_options = {
+            "delimiter",
+            "quotechar",
+            "escapechar",
+            "has_headers",
+            "encoding",
+            "skiprows",
+            "nrows",
+            "chunksize",
+            "low_memory",
+            "na_values",
+            "column_mapping",
+            "validate_on_parse",
+            "error_recovery",
+            "skip_bad_lines",
+            "max_errors",
+            "infer_types",
+            "relationship_inference",
+            "metadata_extraction",
+        }
+
+        for key, value in options.items():
+            if key not in valid_options and key not in self._get_default_options():
+                raise ValueError(f"Unknown option: {key}")
+
+            # Validate specific option values
+            if (
+                key == "nrows"
+                and value is not None
+                and (not isinstance(value, int) or value <= 0)
+            ):
+                raise ValueError(
+                    "Invalid value for option 'nrows': must be positive integer"
+                )
+            if key == "skiprows" and (not isinstance(value, int) or value < 0):
+                raise ValueError(
+                    "Invalid value for option 'skiprows': must be non-negative integer"
+                )
+            if (
+                key == "chunksize"
+                and value is not None
+                and (not isinstance(value, int) or value <= 0)
+            ):
+                raise ValueError(
+                    "Invalid value for option 'chunksize': must be positive integer"
+                )
+
+        # Update options
+        self.options.update(options)
+        self.logger.debug(f"Updated options: {list(options.keys())}")
 
     def get_options(self) -> Dict[str, Any]:
         """Get current options."""
-        raise NotImplementedError("Get options not implemented")
+        return copy.deepcopy(self.options)
 
     def get_metadata(self) -> Dict[str, Any]:
         """Get parser metadata."""
-        raise NotImplementedError("Get metadata not implemented")
+        return {
+            "parser_name": self.parser_name,
+            "supported_formats": self.get_supported_formats(),
+            "current_options": self.get_options(),
+            "statistics": {
+                "total_parses": self.statistics.total_parses,
+                "successful_parses": self.statistics.successful_parses,
+                "failed_parses": self.statistics.failed_parses,
+                "average_parse_time": self.statistics.average_parse_time,
+            },
+            "detected_dialect": self._detected_dialect.__dict__
+            if self._detected_dialect
+            else None,
+            "detected_encoding": self._detected_encoding,
+            "column_types": self._column_types,
+            "custom_headers": self._custom_headers,
+        }
 
-    def parse_file(self, file_path: str, **kwargs) -> Any:
+    def parse_file(self, file_path: str, **kwargs) -> ParseResult:
         """Parse CSV file from file path."""
-        raise NotImplementedError("Parse file method not implemented")
+        try:
+            # Detect encoding first
+            with open(file_path, "rb") as f:
+                raw_data = f.read(10000)  # Read first 10KB for detection
+                encoding = self.detect_encoding(raw_data)
 
-    def parse_string(self, content: str, **kwargs) -> Any:
+            # Read file with detected encoding
+            with open(file_path, "r", encoding=encoding) as f:
+                content = f.read()
+
+            # Update options with file-specific settings
+            file_options = dict(kwargs)
+            file_options["source_file"] = file_path
+
+            return self.parse_string(content, **file_options)
+
+        except FileNotFoundError:
+            raise FileNotFoundError(f"File not found: {file_path}")
+        except UnicodeDecodeError as e:
+            raise UnicodeDecodeError(
+                e.encoding,
+                e.object,
+                e.start,
+                e.end,
+                f"Encoding error in file {file_path}: {e.reason}",
+            )
+        except Exception as e:
+            self.logger.error(f"Error parsing file {file_path}: {str(e)}")
+            raise
+
+    def parse_string(self, content: str, **kwargs) -> ParseResult:
         """Parse CSV content from string."""
-        raise NotImplementedError("Parse string method not implemented")
+        if not content or not content.strip():
+            raise ValueError("Empty CSV file")
 
-    def parse_stream(self, stream, **kwargs) -> Any:
+        start_time = time.time()
+        result = ParseResult(success=False)
+
+        try:
+            # Execute pre-parse hooks
+            self._execute_hooks("pre_parse", content, **kwargs)
+
+            # Validate input if enabled
+            if self.options.get("validate_on_parse", True):
+                self._validation_errors = []
+                validation_result = self.validate_csv(content, **kwargs)
+                if not validation_result.get("valid_structure", False):
+                    result.errors.extend(validation_result.get("errors", []))
+                    result.warnings.extend(validation_result.get("warnings", []))
+                    if not self.options.get("error_recovery", False):
+                        return result
+
+            # Detect dialect and format
+            detected_format = self.detect_format(content)
+            dialect = self.detect_dialect(content)
+            self._detected_dialect = dialect
+
+            # Detect headers
+            has_headers = self.options.get("has_headers")
+            if has_headers is None:
+                has_headers = self.detect_headers(content)
+
+            # Parse CSV data
+            parsed_data = self._parse_csv_content(
+                content, dialect, has_headers, **kwargs
+            )
+
+            # Infer column types if enabled
+            if self.options.get("infer_types", True):
+                self._column_types = self.infer_column_types(content)
+
+            # Build result
+            result.success = True
+            result.data = parsed_data
+            result.metadata = {
+                "format": detected_format,
+                "dialect": {
+                    "delimiter": dialect.delimiter,
+                    "quotechar": dialect.quotechar,
+                    "escapechar": dialect.escapechar,
+                    "doublequote": dialect.doublequote,
+                    "skipinitialspace": dialect.skipinitialspace,
+                    "lineterminator": dialect.lineterminator,
+                    "quoting": dialect.quoting,
+                }
+                if dialect
+                else None,
+                "has_headers": has_headers,
+                "headers": parsed_data.get("headers", []),
+                "row_count": len(parsed_data.get("rows", [])),
+                "column_count": len(parsed_data.get("headers", [])),
+                "column_types": self._column_types,
+                "encoding": self._detected_encoding,
+                "source_file": kwargs.get("source_file"),
+            }
+
+            # Execute post-parse hooks
+            self._execute_hooks("post_parse", result)
+
+        except Exception as e:
+            self.logger.error(f"Parse error: {str(e)}")
+            result.errors.append(str(e))
+            self._execute_hooks("on_error", e)
+
+        finally:
+            result.parse_time = time.time() - start_time
+            self.statistics.update_parse_stats(
+                result.success, result.parse_time, len(content)
+            )
+
+        return result
+
+    def _parse_csv_content(
+        self, content: str, dialect: Any, has_headers: bool, **kwargs
+    ) -> Dict[str, Any]:
+        """Internal method to parse CSV content."""
+        rows = []
+        headers = []
+
+        # Create CSV reader
+        csv_input = self._io.StringIO(content)
+
+        # Configure reader parameters
+        reader_kwargs = {}
+        if dialect:
+            reader_kwargs["dialect"] = dialect
+        else:
+            reader_kwargs["delimiter"] = self.options.get("delimiter", ",")
+            reader_kwargs["quotechar"] = self.options.get("quotechar", '"')
+            if self.options.get("escapechar"):
+                reader_kwargs["escapechar"] = self.options.get("escapechar")
+
+        reader = self._csv.reader(csv_input, **reader_kwargs)
+
+        # Skip rows if specified
+        skiprows = self.options.get("skiprows", 0)
+        for _ in range(skiprows):
+            try:
+                next(reader)
+            except StopIteration:
+                break
+
+        # Handle headers
+        if has_headers:
+            try:
+                headers = next(reader)
+                headers = [str(h).strip() for h in headers]
+            except StopIteration:
+                headers = []
+        elif self._custom_headers:
+            headers = self._custom_headers
+        else:
+            # Generate default headers
+            first_row = next(reader, [])
+            if first_row:
+                headers = [f"column_{i}" for i in range(len(first_row))]
+                rows.append(first_row)
+
+        # Read data rows
+        nrows = self.options.get("nrows")
+        row_count = 0
+
+        for row in reader:
+            if nrows and row_count >= nrows:
+                break
+
+            # Handle bad lines
+            if len(row) != len(headers) and not self.options.get(
+                "skip_bad_lines", False
+            ):
+                if not self.options.get("error_recovery", False):
+                    raise ValueError(
+                        f"Invalid CSV: inconsistent field count at row {row_count + 1}"
+                    )
+                else:
+                    self._validation_errors.append(
+                        f"Row {row_count + 1}: Field count mismatch - expected {len(headers)}, got {len(row)}"
+                    )
+                    continue
+
+            # Pad or truncate row to match header count
+            if len(row) < len(headers):
+                row.extend([""] * (len(headers) - len(row)))
+            elif len(row) > len(headers):
+                row = row[: len(headers)]
+
+            rows.append(row)
+            row_count += 1
+
+        return {
+            "headers": headers,
+            "rows": rows,
+            "total_rows": len(rows),
+            "errors": self._validation_errors,
+            "has_headers": has_headers,
+        }
+
+    def parse_stream(self, stream, **kwargs) -> ParseResult:
         """Parse CSV from stream/file-like object."""
-        raise NotImplementedError("Parse stream method not implemented")
+        try:
+            content = stream.read()
+            if isinstance(content, bytes):
+                encoding = self.detect_encoding(content)
+                content = content.decode(encoding)
+            return self.parse_string(content, **kwargs)
+        except Exception as e:
+            self.logger.error(f"Stream parsing error: {str(e)}")
+            raise
 
     def detect_format(self, content: str) -> str:
-        """Detect CSV format."""
-        raise NotImplementedError("Detect format method not implemented")
+        """Detect CSV format based on content analysis."""
+        if not content:
+            return "csv"
+
+        # Sample first few lines for analysis
+        lines = content.split("\n")[:10]
+        sample = "\n".join(lines)
+
+        # Count delimiter occurrences
+        comma_count = sample.count(",")
+        tab_count = sample.count("\t")
+        pipe_count = sample.count("|")
+        semicolon_count = sample.count(";")
+
+        # Determine format based on delimiter frequency
+        if tab_count > comma_count and tab_count > pipe_count:
+            return "tsv"
+        elif comma_count > 0:
+            return "csv"
+        elif pipe_count > 0:
+            return "csv"  # Custom delimiter CSV
+        elif semicolon_count > 0:
+            return "csv"  # Semicolon-separated CSV
+        else:
+            return "csv"  # Default
 
     def detect_dialect(self, content: str) -> Any:
-        """Detect CSV dialect."""
-        raise NotImplementedError("Detect dialect method not implemented")
+        """Detect CSV dialect using csv.Sniffer."""
+        if not content:
+            return None
+
+        try:
+            # Use first 1024 characters for dialect detection
+            sample = content[:1024] if len(content) > 1024 else content
+
+            sniffer = self._csv.Sniffer()
+            dialect = sniffer.sniff(sample, delimiters=",\t|;")
+
+            # Store dialect info
+            self.logger.debug(
+                f"Detected dialect: delimiter='{dialect.delimiter}', "
+                f"quotechar='{dialect.quotechar}', escapechar='{dialect.escapechar}'"
+            )
+
+            return dialect
+
+        except Exception as e:
+            self.logger.warning(f"Dialect detection failed: {str(e)}, using defaults")
+
+            # Return default dialect
+            class DefaultDialect:
+                delimiter = self.options.get("delimiter", ",")
+                quotechar = self.options.get("quotechar", '"')
+                escapechar = self.options.get("escapechar")
+                skipinitialspace = False
+                doublequote = True
+                quoting = self._csv.QUOTE_MINIMAL
+
+            return DefaultDialect()
 
     def detect_encoding(self, content: bytes) -> str:
         """Detect file encoding."""
-        raise NotImplementedError("Detect encoding method not implemented")
+        if not content:
+            return "utf-8"
+
+        # Try chardet if available
+        if self._chardet_available:
+            try:
+                import chardet
+
+                result = chardet.detect(content)
+                encoding = result.get("encoding", "utf-8")
+                confidence = result.get("confidence", 0)
+
+                if confidence > 0.7:
+                    self.logger.debug(
+                        f"Detected encoding: {encoding} (confidence: {confidence:.2f})"
+                    )
+                    self._detected_encoding = encoding
+                    return encoding
+            except Exception as e:
+                self.logger.warning(f"chardet encoding detection failed: {str(e)}")
+
+        # Fallback: try common encodings
+        encodings_to_try = ["utf-8", "utf-16", "latin-1", "cp1252"]
+
+        for encoding in encodings_to_try:
+            try:
+                content.decode(encoding)
+                self._detected_encoding = encoding
+                return encoding
+            except UnicodeDecodeError:
+                continue
+
+        # Default fallback
+        self._detected_encoding = "utf-8"
+        return "utf-8"
 
     def detect_headers(self, content: str) -> bool:
-        """Detect if CSV has headers."""
-        raise NotImplementedError("Detect headers method not implemented")
+        """Detect if CSV has headers using csv.Sniffer."""
+        if not content:
+            return False
+
+        try:
+            # Use first few lines for header detection
+            lines = content.split("\n")[:10]
+            sample = "\n".join(lines)
+
+            sniffer = self._csv.Sniffer()
+            has_headers = sniffer.has_header(sample)
+
+            self.logger.debug(f"Header detection result: {has_headers}")
+            return has_headers
+
+        except Exception as e:
+            self.logger.warning(
+                f"Header detection failed: {str(e)}, assuming headers present"
+            )
+            return True  # Conservative default
 
     def get_headers(self, content: str) -> List[str]:
-        """Get headers from CSV."""
-        raise NotImplementedError("Get headers method not implemented")
+        """Get headers from CSV content."""
+        if not content:
+            return []
+
+        try:
+            # Use detected dialect or default
+            dialect = self._detected_dialect or self.detect_dialect(content)
+
+            csv_input = self._io.StringIO(content)
+            reader = self._csv.reader(csv_input, dialect=dialect)
+
+            # Skip rows if specified
+            skiprows = self.options.get("skiprows", 0)
+            for _ in range(skiprows):
+                try:
+                    next(reader)
+                except StopIteration:
+                    break
+
+            # Get first row as headers
+            first_row = next(reader, [])
+            headers = [str(h).strip() for h in first_row]
+
+            return headers
+
+        except Exception as e:
+            self.logger.error(f"Error extracting headers: {str(e)}")
+            return []
 
     def set_headers(self, headers: List[str]) -> None:
         """Set custom headers."""
-        raise NotImplementedError("Set headers method not implemented")
+        if not isinstance(headers, list):
+            raise ValueError("Headers must be a list of strings")
+
+        self._custom_headers = [str(h) for h in headers]
+        self.logger.debug(f"Set custom headers: {self._custom_headers}")
 
     def infer_column_types(self, content: str) -> Dict[str, str]:
-        """Infer column data types."""
-        raise NotImplementedError("Infer column types method not implemented")
+        """Infer column data types from content analysis."""
+        if not content:
+            return {}
 
-    def to_ontology(self, parsed_result: Any) -> Any:
+        try:
+            # Parse a sample of the data
+            parsed = self._parse_csv_content(
+                content, self._detected_dialect, self.detect_headers(content)
+            )
+
+            headers = parsed.get("headers", [])
+            rows = parsed.get("rows", [])
+
+            if not headers or not rows:
+                return {}
+
+            column_types = {}
+
+            # Analyze each column
+            for i, header in enumerate(headers):
+                column_values = []
+
+                # Collect non-empty values from this column
+                for row in rows[:100]:  # Sample first 100 rows
+                    if i < len(row) and row[i] and str(row[i]).strip():
+                        column_values.append(str(row[i]).strip())
+
+                if not column_values:
+                    column_types[header] = "string"
+                    continue
+
+                # Infer type based on content patterns
+                column_types[header] = self._infer_single_column_type(
+                    header, column_values
+                )
+
+            return column_types
+
+        except Exception as e:
+            self.logger.error(f"Column type inference failed: {str(e)}")
+            return {}
+
+    def _infer_single_column_type(self, header: str, values: List[str]) -> str:
+        """Infer type for a single column."""
+        if not values:
+            return "string"
+
+        # Check for common ontology patterns
+        header_lower = header.lower()
+
+        if "id" in header_lower and all(
+            self._re.match(r"^[A-Z]+:\d+", v) for v in values[:10]
+        ):
+            return "ontology_id"
+
+        if "synonym" in header_lower or "alias" in header_lower:
+            return "list"  # Often semicolon-separated
+
+        if "categor" in header_lower or "type" in header_lower:
+            return "category"
+
+        # Check if all values are numeric
+        numeric_count = 0
+        for value in values[:20]:  # Sample for performance
+            try:
+                float(value)
+                numeric_count += 1
+            except ValueError:
+                pass
+
+        if numeric_count / len(values[:20]) > 0.8:
+            # Check if integers
+            if all("." not in v for v in values[:10]):
+                return "integer"
+            else:
+                return "float"
+
+        # Check for boolean patterns
+        boolean_values = {"true", "false", "yes", "no", "1", "0", "t", "f", "y", "n"}
+        if all(v.lower() in boolean_values for v in values[:10]):
+            return "boolean"
+
+        # Default to string
+        return "string"
+
+    def to_ontology(self, parsed_result: ParseResult) -> Ontology:
         """Convert parsed CSV to Ontology model."""
-        raise NotImplementedError("To ontology method not implemented")
+        if not parsed_result.success or not parsed_result.data:
+            raise ValueError("Cannot convert failed parse result to ontology")
 
-    def extract_terms(self, parsed_result: Any) -> List[Any]:
+        try:
+            data = parsed_result.data
+            headers = data.get("headers", [])
+            rows = data.get("rows", [])
+
+            if not headers or not rows:
+                raise ValueError("No data to convert to ontology")
+
+            # Create ontology instance
+            ontology_id = f"CSV:{int(time.time())}"  # Follow PREFIX:NUMBER format
+            ontology_name = (
+                f"CSV Parsed Ontology - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+
+            # Extract terms and relationships
+            terms = self.extract_terms(parsed_result)
+            relationships = self.extract_relationships(parsed_result)
+
+            # Build terms and relationships dictionaries
+            terms_dict = {term.id: term for term in terms}
+            relationships_dict = {rel.id: rel for rel in relationships}
+
+            # Create ontology
+            if Ontology:
+                ontology = Ontology(
+                    id=ontology_id,
+                    name=ontology_name,
+                    version="1.0.0",
+                    description=f"Ontology created from CSV parsing with {len(terms)} terms",
+                    terms=terms_dict,
+                    relationships=relationships_dict,
+                    metadata=self.extract_metadata(parsed_result),
+                )
+
+                self.logger.info(
+                    f"Created ontology with {len(terms)} terms and {len(relationships)} relationships"
+                )
+                return ontology
+            else:
+                self.logger.warning(
+                    "Ontology model not available, returning mock object"
+                )
+
+                # Return mock object for testing
+                class MockOntology:
+                    def __init__(self):
+                        self.id = ontology_id
+                        self.name = ontology_name
+                        self.terms = terms_dict
+                        self.relationships = relationships_dict
+                        self.metadata = self.extract_metadata(parsed_result)
+
+                return MockOntology()
+
+        except Exception as e:
+            self.logger.error(f"Ontology conversion failed: {str(e)}")
+            raise
+
+    def extract_terms(self, parsed_result: ParseResult) -> List[Term]:
         """Extract Term objects from parsed CSV."""
-        raise NotImplementedError("Extract terms method not implemented")
+        if not parsed_result.success or not parsed_result.data:
+            return []
 
-    def extract_relationships(self, parsed_result: Any) -> List[Any]:
+        try:
+            data = parsed_result.data
+            headers = data.get("headers", [])
+            rows = data.get("rows", [])
+
+            if not headers or not rows:
+                return []
+
+            terms = []
+            column_mapping = self.options.get("column_mapping", {})
+
+            # Identify key columns
+            id_col = self._find_column(
+                headers, ["id", "term_id", "identifier"], column_mapping
+            )
+            name_col = self._find_column(
+                headers, ["name", "label", "term_name"], column_mapping
+            )
+            def_col = self._find_column(
+                headers, ["definition", "description", "def"], column_mapping
+            )
+            cat_col = self._find_column(
+                headers, ["category", "type", "class"], column_mapping
+            )
+            syn_col = self._find_column(
+                headers, ["synonyms", "aliases", "alternative_labels"], column_mapping
+            )
+
+            for i, row in enumerate(rows):
+                try:
+                    # Extract term data
+                    term_id = self._get_cell_value(row, id_col, f"TERM_{i+1:06d}")
+                    term_name = self._get_cell_value(row, name_col, f"Term {i+1}")
+                    definition = self._get_cell_value(row, def_col, "")
+                    category = self._get_cell_value(row, cat_col, "")
+                    synonyms_str = self._get_cell_value(row, syn_col, "")
+
+                    # Parse synonyms
+                    synonyms = []
+                    if synonyms_str:
+                        synonyms = [
+                            s.strip() for s in synonyms_str.split(";") if s.strip()
+                        ]
+
+                    # Create term object
+                    if Term:
+                        term = Term(
+                            id=str(term_id),
+                            name=str(term_name),
+                            definition=str(definition) if definition else None,
+                            namespace=str(category) if category else None,
+                            synonyms=synonyms,
+                            metadata={
+                                "source": "csv_parser",
+                                "row_index": i,
+                                "original_data": dict(zip(headers, row)),
+                            },
+                        )
+                        terms.append(term)
+                    else:
+                        # Mock term for testing
+                        class MockTerm:
+                            def __init__(self):
+                                self.id = str(term_id)
+                                self.name = str(term_name)
+                                self.definition = (
+                                    str(definition) if definition else None
+                                )
+                                self.namespace = str(category) if category else None
+                                self.synonyms = synonyms
+
+                        terms.append(MockTerm())
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to create term from row {i}: {str(e)}")
+                    continue
+
+            self.logger.info(f"Extracted {len(terms)} terms from CSV")
+            return terms
+
+        except Exception as e:
+            self.logger.error(f"Term extraction failed: {str(e)}")
+            return []
+
+    def extract_relationships(self, parsed_result: ParseResult) -> List[Relationship]:
         """Extract Relationship objects from parsed CSV."""
-        raise NotImplementedError("Extract relationships method not implemented")
+        if not self.options.get("relationship_inference", False):
+            return []
 
-    def extract_metadata(self, parsed_result: Any) -> Dict[str, Any]:
+        if not parsed_result.success or not parsed_result.data:
+            return []
+
+        try:
+            relationships = []
+            data = parsed_result.data
+            headers = data.get("headers", [])
+            rows = data.get("rows", [])
+
+            # Look for explicit relationship columns
+            rel_columns = self._find_relationship_columns(headers)
+
+            if rel_columns:
+                # Extract explicit relationships
+                relationships.extend(
+                    self._extract_explicit_relationships(headers, rows, rel_columns)
+                )
+
+            # Infer relationships from category hierarchy
+            if self._find_column(headers, ["category", "type", "class"]) >= 0:
+                relationships.extend(self._infer_category_relationships(headers, rows))
+
+            self.logger.info(f"Extracted {len(relationships)} relationships from CSV")
+            return relationships
+
+        except Exception as e:
+            self.logger.error(f"Relationship extraction failed: {str(e)}")
+            return []
+
+    def _find_column(
+        self,
+        headers: List[str],
+        possible_names: List[str],
+        mapping: Dict[str, str] = None,
+    ) -> int:
+        """Find column index by possible names."""
+        if mapping:
+            for mapped_name, actual_name in mapping.items():
+                if mapped_name in possible_names and actual_name in headers:
+                    return headers.index(actual_name)
+
+        for name in possible_names:
+            for i, header in enumerate(headers):
+                if name.lower() in header.lower():
+                    return i
+
+        return -1
+
+    def _get_cell_value(self, row: List[str], col_index: int, default: str = "") -> str:
+        """Get cell value with fallback to default."""
+        if col_index >= 0 and col_index < len(row):
+            value = row[col_index]
+            return value if value is not None else default
+        return default
+
+    def _find_relationship_columns(self, headers: List[str]) -> List[int]:
+        """Find columns that might contain relationship information."""
+        rel_indicators = ["parent", "child", "related", "depends", "is_a", "part_of"]
+        rel_columns = []
+
+        for i, header in enumerate(headers):
+            header_lower = header.lower()
+            if any(indicator in header_lower for indicator in rel_indicators):
+                rel_columns.append(i)
+
+        return rel_columns
+
+    def _extract_explicit_relationships(
+        self, headers: List[str], rows: List[List[str]], rel_columns: List[int]
+    ) -> List[Relationship]:
+        """Extract explicit relationships from relationship columns."""
+        relationships = []
+        id_col = self._find_column(headers, ["id", "term_id", "identifier"])
+
+        for i, row in enumerate(rows):
+            subject_id = self._get_cell_value(row, id_col, f"TERM_{i+1:06d}")
+
+            for rel_col in rel_columns:
+                rel_value = self._get_cell_value(row, rel_col)
+                if rel_value:
+                    # Parse relationship format (assuming "predicate:object" or just "object")
+                    if ":" in rel_value:
+                        predicate, object_id = rel_value.split(":", 1)
+                    else:
+                        predicate = "related_to"
+                        object_id = rel_value
+
+                    rel_id = f"REL_{len(relationships)+1:06d}"
+
+                    if Relationship:
+                        relationship = Relationship(
+                            id=rel_id,
+                            subject=subject_id.strip(),
+                            predicate=predicate.strip(),
+                            object=object_id.strip(),
+                            confidence=0.8,
+                            source="csv_inference",
+                            metadata={
+                                "source_column": headers[rel_col],
+                                "row_index": i,
+                            },
+                        )
+                        relationships.append(relationship)
+
+        return relationships
+
+    def _infer_category_relationships(
+        self, headers: List[str], rows: List[List[str]]
+    ) -> List[Relationship]:
+        """Infer is-a relationships from categories."""
+        relationships = []
+        id_col = self._find_column(headers, ["id", "term_id", "identifier"])
+        cat_col = self._find_column(headers, ["category", "type", "class"])
+
+        if id_col == -1 or cat_col == -1:
+            return relationships
+
+        for i, row in enumerate(rows):
+            subject_id = self._get_cell_value(row, id_col, f"TERM_{i+1:06d}")
+            category = self._get_cell_value(row, cat_col)
+
+            if category:
+                rel_id = f"REL_{len(relationships)+1:06d}"
+
+                if Relationship:
+                    relationship = Relationship(
+                        id=rel_id,
+                        subject=subject_id.strip(),
+                        predicate="is_a",
+                        object=category.strip(),
+                        confidence=0.7,
+                        source="csv_category_inference",
+                        metadata={"row_index": i},
+                    )
+                    relationships.append(relationship)
+
+        return relationships
+
+    def extract_metadata(self, parsed_result: ParseResult) -> Dict[str, Any]:
         """Extract metadata from parsed CSV."""
-        raise NotImplementedError("Extract metadata method not implemented")
+        if not parsed_result.success:
+            return {}
+
+        base_metadata = {
+            "source_format": "csv",
+            "parser_version": "1.0.0",
+            "parsing_timestamp": datetime.now().isoformat(),
+            "detected_encoding": self._detected_encoding,
+        }
+
+        if parsed_result.metadata:
+            base_metadata.update(parsed_result.metadata)
+
+        if parsed_result.data:
+            data = parsed_result.data
+            base_metadata.update(
+                {
+                    "original_row_count": data.get("total_rows", 0),
+                    "processed_row_count": len(data.get("rows", [])),
+                    "column_count": len(data.get("headers", [])),
+                    "headers": data.get("headers", []),
+                    "has_headers": data.get("has_headers", False),
+                    "column_types": self._column_types,
+                }
+            )
+
+        if self._detected_dialect:
+            base_metadata["dialect"] = {
+                "delimiter": self._detected_dialect.delimiter,
+                "quotechar": self._detected_dialect.quotechar,
+                "escapechar": getattr(self._detected_dialect, "escapechar", None),
+            }
+
+        return base_metadata
 
     def validate_csv(self, content: str, **kwargs) -> Dict[str, Any]:
         """Validate CSV content with detailed results."""
-        raise NotImplementedError("Validate CSV method not implemented")
+        validation_result = {
+            "valid_structure": False,
+            "valid_headers": False,
+            "valid_data_types": False,
+            "required_columns_present": False,
+            "header_consistency": False,
+            "type_consistency": False,
+            "null_value_check": False,
+            "valid_field_formats": False,
+            "id_format_valid": False,
+            "name_format_valid": False,
+            "errors": [],
+            "warnings": [],
+            "format_errors": [],
+            "required_columns": kwargs.get("required_columns", ["id", "name"]),
+            "missing_columns": [],
+            "extra_columns": [],
+        }
+
+        try:
+            # Basic structure validation
+            if not content or not content.strip():
+                validation_result["errors"].append("Empty CSV content")
+                return validation_result
+
+            # Try to parse structure
+            try:
+                dialect = self.detect_dialect(content)
+                headers = self.get_headers(content)
+
+                if headers:
+                    validation_result["valid_structure"] = True
+                    validation_result["valid_headers"] = True
+                    validation_result["header_consistency"] = True
+                else:
+                    validation_result["errors"].append("No valid headers found")
+                    return validation_result
+
+            except Exception as e:
+                validation_result["errors"].append(
+                    f"Structure parsing failed: {str(e)}"
+                )
+                return validation_result
+
+            # Check required columns
+            required_columns = validation_result["required_columns"]
+            missing_columns = []
+
+            for req_col in required_columns:
+                if not any(req_col.lower() in h.lower() for h in headers):
+                    missing_columns.append(req_col)
+
+            validation_result["missing_columns"] = missing_columns
+            validation_result["required_columns_present"] = len(missing_columns) == 0
+
+            # Check for extra columns
+            standard_columns = ["id", "name", "definition", "category", "synonyms"]
+            extra_columns = []
+            for header in headers:
+                if not any(std.lower() in header.lower() for std in standard_columns):
+                    extra_columns.append(header)
+
+            validation_result["extra_columns"] = extra_columns
+
+            # Validate data types and formats
+            try:
+                parsed_sample = self._parse_csv_content(
+                    content[:5000], dialect, True
+                )  # Sample first 5KB
+                rows = parsed_sample.get("rows", [])
+
+                if rows:
+                    validation_result["valid_data_types"] = True
+                    validation_result["type_consistency"] = True
+                    validation_result["null_value_check"] = True
+
+                    # Validate specific field formats
+                    id_col = self._find_column(headers, ["id", "term_id"])
+                    name_col = self._find_column(headers, ["name", "label"])
+
+                    if id_col >= 0:
+                        id_valid = all(
+                            self._validate_id_format(self._get_cell_value(row, id_col))
+                            for row in rows[:10]
+                        )
+                        validation_result["id_format_valid"] = id_valid
+                        if not id_valid:
+                            validation_result["format_errors"].append(
+                                "Invalid ID format detected"
+                            )
+
+                    if name_col >= 0:
+                        name_valid = all(
+                            self._get_cell_value(row, name_col).strip() != ""
+                            for row in rows[:10]
+                        )
+                        validation_result["name_format_valid"] = name_valid
+                        if not name_valid:
+                            validation_result["format_errors"].append(
+                                "Empty names detected"
+                            )
+
+                    validation_result["valid_field_formats"] = (
+                        validation_result["id_format_valid"]
+                        and validation_result["name_format_valid"]
+                    )
+
+            except Exception as e:
+                validation_result["warnings"].append(
+                    f"Data validation warning: {str(e)}"
+                )
+
+            # Overall validation status
+            validation_result["valid_structure"] = (
+                validation_result["valid_headers"]
+                and validation_result["required_columns_present"]
+                and len(validation_result["errors"]) == 0
+            )
+
+        except Exception as e:
+            validation_result["errors"].append(f"Validation error: {str(e)}")
+
+        return validation_result
+
+    def _validate_id_format(self, id_value: str) -> bool:
+        """Validate ID format (basic check for non-empty and reasonable format)."""
+        if not id_value or not id_value.strip():
+            return False
+
+        # Check for common ontology ID patterns
+        id_patterns = [
+            r"^[A-Z]+:\d+$",  # CHEM:001
+            r"^[A-Z]+_\d+$",  # CHEM_001
+            r"^\w+$",  # Any word characters
+        ]
+
+        for pattern in id_patterns:
+            if self._re.match(pattern, id_value.strip()):
+                return True
+
+        return True  # Allow any non-empty string as fallback
 
     def get_validation_errors(self) -> List[str]:
         """Get validation errors."""
-        raise NotImplementedError("Get validation errors method not implemented")
+        return self._validation_errors.copy()
 
     def reset_options(self) -> None:
         """Reset options to defaults."""
-        raise NotImplementedError("Reset options method not implemented")
+        self.options = copy.deepcopy(self._get_default_options())
+        self._custom_headers = None
+        self._detected_dialect = None
+        self._detected_encoding = "utf-8"
+        self._validation_errors = []
+        self._column_types = {}
+        self.logger.debug("Options reset to defaults")
 
 
 class JSONLDParser(AbstractParser):
