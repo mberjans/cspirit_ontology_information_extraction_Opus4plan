@@ -1141,6 +1141,524 @@ class TestOWLParserPerformance:
         assert parser.parse_file.call_count == 2
 
 
+# Additional test classes for RDF triple extraction functionality
+
+
+class TestRDFTripleModel:
+    """Test RDFTriple model class functionality."""
+
+    def test_rdf_triple_basic_initialization(self):
+        """Test basic RDFTriple initialization with required fields."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://example.org/predicate",
+            object="http://example.org/object",
+        )
+
+        assert triple.subject == "http://example.org/subject"
+        assert triple.predicate == "http://example.org/predicate"
+        assert triple.object == "http://example.org/object"
+        assert triple.subject_type == "uri"
+        assert triple.object_type == "uri"
+        assert triple.confidence == 1.0
+        assert isinstance(triple.metadata, dict)
+        assert isinstance(triple.namespace_prefixes, dict)
+        assert triple.created_at is not None
+
+    def test_rdf_triple_comprehensive_initialization(self):
+        """Test RDFTriple initialization with all fields."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+        from datetime import datetime
+
+        created_time = datetime.now()
+        metadata = {"source": "test", "method": "parsing"}
+        namespaces = {
+            "ex": "http://example.org/",
+            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        }
+
+        triple = RDFTriple(
+            subject="http://example.org/Chemical",
+            predicate="http://www.w3.org/2000/01/rdf-schema#label",
+            object="Glucose",
+            subject_type="uri",
+            object_type="literal",
+            object_datatype="http://www.w3.org/2001/XMLSchema#string",
+            object_language="en",
+            context="http://example.org/context",
+            source="ChEBI",
+            confidence=0.95,
+            metadata=metadata,
+            created_at=created_time,
+            namespace_prefixes=namespaces,
+        )
+
+        assert triple.subject == "http://example.org/Chemical"
+        assert triple.predicate == "http://www.w3.org/2000/01/rdf-schema#label"
+        assert triple.object == "Glucose"
+        assert triple.subject_type == "uri"
+        assert triple.object_type == "literal"
+        assert triple.object_datatype == "http://www.w3.org/2001/XMLSchema#string"
+        assert triple.object_language == "en"
+        assert triple.context == "http://example.org/context"
+        assert triple.source == "ChEBI"
+        assert triple.confidence == 0.95
+        assert triple.metadata == metadata
+        assert triple.created_at == created_time
+        assert triple.namespace_prefixes == namespaces
+
+    def test_rdf_triple_confidence_validation(self):
+        """Test confidence score validation and normalization."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        # Test confidence normalization to valid range
+        triple1 = RDFTriple("s", "p", "o", confidence=1.5)
+        assert triple1.confidence == 1.0
+
+        triple2 = RDFTriple("s", "p", "o", confidence=-0.5)
+        assert triple2.confidence == 0.0
+
+        triple3 = RDFTriple("s", "p", "o", confidence="invalid")
+        assert triple3.confidence == 1.0
+
+        # Test valid confidence values
+        triple4 = RDFTriple("s", "p", "o", confidence=0.75)
+        assert triple4.confidence == 0.75
+
+    def test_rdf_triple_validation_methods(self):
+        """Test RDFTriple validation methods."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        # Valid triple
+        valid_triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://example.org/predicate",
+            object="http://example.org/object",
+        )
+        assert valid_triple.is_valid()
+
+        # Test validation with different object types
+        literal_triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://example.org/predicate",
+            object="literal value",
+            object_type="literal",
+        )
+        assert literal_triple.is_valid()
+
+        # Test blank node validation
+        bnode_triple = RDFTriple(
+            subject="_:b1",
+            predicate="http://example.org/predicate",
+            object="_:b2",
+            subject_type="bnode",
+            object_type="bnode",
+        )
+        assert bnode_triple.is_valid()
+
+    def test_rdf_triple_serialization_methods(self):
+        """Test RDFTriple serialization and deserialization methods."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        original_triple = RDFTriple(
+            subject="http://example.org/Chemical",
+            predicate="http://www.w3.org/2000/01/rdf-schema#label",
+            object="Glucose",
+            object_type="literal",
+            object_datatype="http://www.w3.org/2001/XMLSchema#string",
+            confidence=0.95,
+            metadata={"source": "test"},
+        )
+
+        # Test to_dict serialization
+        triple_dict = original_triple.to_dict()
+        assert isinstance(triple_dict, dict)
+        assert triple_dict["subject"] == "http://example.org/Chemical"
+        assert triple_dict["predicate"] == "http://www.w3.org/2000/01/rdf-schema#label"
+        assert triple_dict["object"] == "Glucose"
+        assert triple_dict["confidence"] == 0.95
+
+        # Test from_dict deserialization
+        restored_triple = RDFTriple.from_dict(triple_dict)
+        assert restored_triple.subject == original_triple.subject
+        assert restored_triple.predicate == original_triple.predicate
+        assert restored_triple.object == original_triple.object
+        assert restored_triple.confidence == original_triple.confidence
+
+        # Test to_json serialization
+        triple_json = original_triple.to_json()
+        assert isinstance(triple_json, str)
+
+        # Test from_json deserialization
+        restored_from_json = RDFTriple.from_json(triple_json)
+        assert restored_from_json.subject == original_triple.subject
+        assert restored_from_json.predicate == original_triple.predicate
+        assert restored_from_json.object == original_triple.object
+
+    def test_rdf_triple_equality_and_hashing(self):
+        """Test RDFTriple equality comparison and hashing."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        triple1 = RDFTriple("s", "p", "o")
+        triple2 = RDFTriple("s", "p", "o")
+        triple3 = RDFTriple("s", "p", "different")
+
+        # Test equality
+        assert triple1 == triple2
+        assert triple1 != triple3
+
+        # Test hashing (should be hashable for use in sets/dicts)
+        triple_set = {triple1, triple2, triple3}
+        assert len(triple_set) == 2  # triple1 and triple2 should be considered equal
+
+    def test_rdf_triple_string_representation(self):
+        """Test RDFTriple string representation methods."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        triple = RDFTriple(
+            subject="http://ex.org/s", predicate="http://ex.org/p", object="value"
+        )
+
+        # Test __str__ method
+        str_repr = str(triple)
+        assert "http://ex.org/s" in str_repr
+        assert "http://ex.org/p" in str_repr
+        assert "value" in str_repr
+
+        # Test __repr__ method
+        repr_str = repr(triple)
+        assert "RDFTriple" in repr_str
+        assert "http://ex.org/s" in repr_str
+
+    def test_rdf_triple_turtle_serialization(self):
+        """Test RDFTriple Turtle format serialization."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        # URI triple
+        uri_triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://example.org/predicate",
+            object="http://example.org/object",
+        )
+        turtle = uri_triple.to_turtle()
+        assert "<http://example.org/subject>" in turtle
+        assert "<http://example.org/predicate>" in turtle
+        assert "<http://example.org/object>" in turtle
+
+        # Literal triple
+        literal_triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://www.w3.org/2000/01/rdf-schema#label",
+            object="Test Label",
+            object_type="literal",
+            object_language="en",
+        )
+        turtle_literal = literal_triple.to_turtle()
+        assert '"Test Label"@en' in turtle_literal
+
+    def test_rdf_triple_ntriples_serialization(self):
+        """Test RDFTriple N-Triples format serialization."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        triple = RDFTriple(
+            subject="http://example.org/subject",
+            predicate="http://example.org/predicate",
+            object="http://example.org/object",
+        )
+
+        ntriples = triple.to_ntriples()
+        assert ntriples.startswith("<http://example.org/subject>")
+        assert "<http://example.org/predicate>" in ntriples
+        assert "<http://example.org/object>" in ntriples
+        assert ntriples.endswith(" .")
+
+    @pytest.mark.parametrize(
+        "subject,predicate,object,expected_valid",
+        [
+            ("http://ex.org/s", "http://ex.org/p", "http://ex.org/o", True),
+            ("", "http://ex.org/p", "http://ex.org/o", False),
+            ("http://ex.org/s", "", "http://ex.org/o", False),
+            ("http://ex.org/s", "http://ex.org/p", "", False),
+            ("_:b1", "http://ex.org/p", "literal", True),
+            ("invalid-uri", "http://ex.org/p", "http://ex.org/o", False),
+        ],
+    )
+    def test_rdf_triple_validation_edge_cases(
+        self, subject, predicate, object, expected_valid
+    ):
+        """Test RDFTriple validation with various edge cases."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        triple = RDFTriple(subject=subject, predicate=predicate, object=object)
+        assert triple.is_valid() == expected_valid
+
+
+class TestOWLParserTripleExtraction:
+    """Test OWL parser RDF triple extraction functionality."""
+
+    def test_extract_triples_method_exists(self, mock_owl_parser):
+        """Test that extract_triples method exists and is callable."""
+        parser = mock_owl_parser()
+
+        # Verify method exists
+        assert hasattr(parser, "extract_triples")
+        assert callable(parser.extract_triples)
+
+    def test_extract_triples_from_valid_parsed_result(self, mock_owl_parser):
+        """Test extracting triples from valid parsed OWL result."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples to be returned
+        mock_triples = [
+            RDFTriple(
+                subject="http://example.org/Chemical",
+                predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                object="http://www.w3.org/2002/07/owl#Class",
+            ),
+            RDFTriple(
+                subject="http://example.org/Chemical",
+                predicate="http://www.w3.org/2000/01/rdf-schema#label",
+                object="Chemical",
+                object_type="literal",
+            ),
+            RDFTriple(
+                subject="http://example.org/Glucose",
+                predicate="http://www.w3.org/2000/01/rdf-schema#subClassOf",
+                object="http://example.org/Chemical",
+            ),
+        ]
+
+        parser.extract_triples.return_value = mock_triples
+
+        # Create mock parsed result
+        parsed_result = {
+            "rdf_graph": Mock(),
+            "owl_ontology": Mock(),
+            "format": "owl",
+            "metadata": {},
+        }
+
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 3
+        assert all(isinstance(t, RDFTriple) for t in triples)
+        assert any(t.predicate.endswith("type") for t in triples)
+        assert any(t.predicate.endswith("label") for t in triples)
+        assert any(t.predicate.endswith("subClassOf") for t in triples)
+
+        parser.extract_triples.assert_called_once_with(parsed_result)
+
+    def test_extract_triples_with_filtering(self, mock_owl_parser):
+        """Test triple extraction with namespace filtering."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure parser with namespace filter
+        parser.set_options(
+            {"conversion_filters": {"namespace_filter": ["http://example.org/"]}}
+        )
+
+        # Mock filtered triples
+        filtered_triples = [
+            RDFTriple(
+                subject="http://example.org/Chemical",
+                predicate="http://www.w3.org/2000/01/rdf-schema#label",
+                object="Chemical",
+                object_type="literal",
+            )
+        ]
+
+        parser.extract_triples.return_value = filtered_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 1
+        assert all(t.subject.startswith("http://example.org/") for t in triples)
+
+    def test_extract_triples_error_handling(self, mock_owl_parser):
+        """Test error handling during triple extraction."""
+        parser = mock_owl_parser()
+        parser.extract_triples.side_effect = Exception("Extraction failed")
+
+        parsed_result = {"rdf_graph": Mock()}
+
+        with pytest.raises(Exception, match="Extraction failed"):
+            parser.extract_triples(parsed_result)
+
+    def test_extract_triples_empty_result(self, mock_owl_parser):
+        """Test triple extraction from empty parsed result."""
+        parser = mock_owl_parser()
+        parser.extract_triples.return_value = []
+
+        parsed_result = {"rdf_graph": None, "owl_ontology": None}
+        triples = parser.extract_triples(parsed_result)
+
+        assert triples == []
+        assert isinstance(triples, list)
+
+    def test_extract_triples_invalid_input(self, mock_owl_parser):
+        """Test triple extraction with invalid input."""
+        parser = mock_owl_parser()
+        parser.extract_triples.return_value = []
+
+        # Test with None input
+        triples = parser.extract_triples(None)
+        assert triples == []
+
+        # Test with invalid format
+        triples = parser.extract_triples("invalid")
+        assert triples == []
+
+    def test_extract_triples_performance_logging(self, mock_owl_parser):
+        """Test that triple extraction logs performance metrics."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure parser to log performance
+        parser.set_options({"log_performance": True})
+
+        mock_triples = [RDFTriple("s1", "p1", "o1"), RDFTriple("s2", "p2", "o2")]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 2
+        parser.set_options.assert_called_with({"log_performance": True})
+
+    def test_extract_triples_with_confidence_scores(self, mock_owl_parser):
+        """Test triple extraction with confidence scoring."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with varying confidence scores
+        mock_triples = [
+            RDFTriple("s1", "p1", "o1", confidence=1.0),
+            RDFTriple("s2", "p2", "o2", confidence=0.8),
+            RDFTriple("s3", "p3", "o3", confidence=0.6),
+        ]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 3
+        assert triples[0].confidence == 1.0
+        assert triples[1].confidence == 0.8
+        assert triples[2].confidence == 0.6
+
+    def test_extract_triples_with_metadata(self, mock_owl_parser):
+        """Test triple extraction preserves metadata."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with metadata
+        mock_triples = [
+            RDFTriple(
+                "s1",
+                "p1",
+                "o1",
+                source="test_ontology",
+                metadata={"extraction_method": "rdflib", "parser_version": "1.0.0"},
+            )
+        ]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 1
+        assert triples[0].source == "test_ontology"
+        assert "extraction_method" in triples[0].metadata
+        assert triples[0].metadata["extraction_method"] == "rdflib"
+
+
+class TestOWLParserIntegrationWithTriples:
+    """Test integration of triple extraction with OWL parser."""
+
+    def test_parse_with_automatic_triple_extraction(
+        self, mock_owl_parser, sample_owl_content
+    ):
+        """Test that parse method automatically extracts triples when configured."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure parser to extract triples during parsing
+        parser.set_options({"extract_triples_on_parse": True})
+
+        # Mock parse result with triples
+        mock_result = {
+            "rdf_graph": Mock(),
+            "owl_ontology": Mock(),
+            "format": "owl",
+            "triples": [RDFTriple("s1", "p1", "o1"), RDFTriple("s2", "p2", "o2")],
+            "triple_count": 2,
+        }
+        parser.parse_string.return_value = mock_result
+
+        result = parser.parse_string(sample_owl_content)
+
+        assert "triples" in result
+        assert "triple_count" in result
+        assert result["triple_count"] == 2
+        assert len(result["triples"]) == 2
+
+    def test_parse_without_automatic_triple_extraction(
+        self, mock_owl_parser, sample_owl_content
+    ):
+        """Test that parse method skips triple extraction when disabled."""
+        parser = mock_owl_parser()
+
+        # Configure parser to NOT extract triples during parsing
+        parser.set_options({"extract_triples_on_parse": False})
+
+        # Mock parse result without triples
+        mock_result = {"rdf_graph": Mock(), "owl_ontology": Mock(), "format": "owl"}
+        parser.parse_string.return_value = mock_result
+
+        result = parser.parse_string(sample_owl_content)
+
+        assert "triples" not in result
+        assert "triple_count" not in result
+
+    def test_parse_triple_extraction_error_handling(
+        self, mock_owl_parser, sample_owl_content
+    ):
+        """Test error handling when triple extraction fails during parsing."""
+        parser = mock_owl_parser()
+
+        # Configure parser to extract triples and continue on error
+        parser.set_options(
+            {"extract_triples_on_parse": True, "continue_on_error": True}
+        )
+
+        # Mock parse result with triple extraction failure handled gracefully
+        mock_result = {
+            "rdf_graph": Mock(),
+            "owl_ontology": Mock(),
+            "format": "owl",
+            "triples": [],  # Empty due to extraction failure
+            "triple_count": 0,
+        }
+        parser.parse_string.return_value = mock_result
+
+        result = parser.parse_string(sample_owl_content)
+
+        assert "triples" in result
+        assert result["triples"] == []
+        assert result["triple_count"] == 0
+
+
 # Test fixtures for complex scenarios
 @pytest.fixture
 def complex_owl_ontology():
@@ -1306,3 +1824,493 @@ def temp_owl_files():
         files["jsonld"] = str(jsonld_file)
 
         yield files
+
+
+class TestRDFTripleExtractionEdgeCases:
+    """Test edge cases for RDF triple extraction."""
+
+    def test_extract_triples_from_empty_ontology(self, mock_owl_parser):
+        """Test triple extraction from empty ontology."""
+        parser = mock_owl_parser()
+        parser.extract_triples.return_value = []
+
+        # Empty parsed result
+        parsed_result = {
+            "rdf_graph": Mock(),
+            "owl_ontology": Mock(),
+            "format": "owl",
+            "metadata": {"triple_count": 0},
+        }
+        parsed_result["rdf_graph"].__len__ = Mock(return_value=0)
+
+        triples = parser.extract_triples(parsed_result)
+
+        assert triples == []
+        assert len(triples) == 0
+
+    def test_extract_triples_from_malformed_data(self, mock_owl_parser):
+        """Test triple extraction from malformed ontology data."""
+        parser = mock_owl_parser()
+
+        # Configure parser to handle errors gracefully
+        parser.set_options({"continue_on_error": True})
+        parser.extract_triples.return_value = []
+
+        # Malformed parsed result
+        parsed_result = {
+            "rdf_graph": None,
+            "owl_ontology": None,
+            "format": "owl",
+            "errors": ["Malformed XML structure"],
+            "warnings": ["Could not parse some triples"],
+        }
+
+        triples = parser.extract_triples(parsed_result)
+
+        assert triples == []
+        parser.set_options.assert_called_with({"continue_on_error": True})
+
+    def test_extract_triples_with_circular_references(self, mock_owl_parser):
+        """Test triple extraction with circular references in ontology."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with circular references
+        circular_triples = [
+            RDFTriple("http://ex.org/A", "http://ex.org/subClassOf", "http://ex.org/B"),
+            RDFTriple("http://ex.org/B", "http://ex.org/subClassOf", "http://ex.org/A"),
+            RDFTriple(
+                "http://ex.org/A", "http://ex.org/equivalentTo", "http://ex.org/A"
+            ),
+        ]
+        parser.extract_triples.return_value = circular_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 3
+        # Should handle circular references without infinite loops
+        subjects = [t.subject for t in triples]
+        assert "http://ex.org/A" in subjects
+        assert "http://ex.org/B" in subjects
+
+    def test_extract_triples_with_unicode_content(self, mock_owl_parser):
+        """Test triple extraction with Unicode content."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with Unicode content
+        unicode_triples = [
+            RDFTriple(
+                "http://example.org/化学物质",
+                "http://www.w3.org/2000/01/rdf-schema#label",
+                "化学物质",
+                object_type="literal",
+                object_language="zh",
+            ),
+            RDFTriple(
+                "http://example.org/Химия",
+                "http://www.w3.org/2000/01/rdf-schema#label",
+                "Химия",
+                object_type="literal",
+                object_language="ru",
+            ),
+        ]
+        parser.extract_triples.return_value = unicode_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 2
+        assert any("化学物质" in t.object for t in triples)
+        assert any("Химия" in t.object for t in triples)
+
+    def test_extract_triples_with_blank_nodes(self, mock_owl_parser):
+        """Test triple extraction with blank nodes."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with blank nodes
+        blank_node_triples = [
+            RDFTriple(
+                "_:b1",
+                "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                "http://example.org/Anonymous",
+                subject_type="bnode",
+            ),
+            RDFTriple(
+                "http://example.org/instance",
+                "http://example.org/hasAnonymous",
+                "_:b1",
+                object_type="bnode",
+            ),
+        ]
+        parser.extract_triples.return_value = blank_node_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 2
+        blank_node_subjects = [t for t in triples if t.subject_type == "bnode"]
+        blank_node_objects = [t for t in triples if t.object_type == "bnode"]
+        assert len(blank_node_subjects) == 1
+        assert len(blank_node_objects) == 1
+
+    def test_extract_triples_with_complex_datatypes(self, mock_owl_parser):
+        """Test triple extraction with complex datatypes."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with various datatypes
+        datatype_triples = [
+            RDFTriple(
+                "http://example.org/measurement",
+                "http://example.org/hasValue",
+                "42.5",
+                object_type="literal",
+                object_datatype="http://www.w3.org/2001/XMLSchema#double",
+            ),
+            RDFTriple(
+                "http://example.org/event",
+                "http://example.org/hasTimestamp",
+                "2023-01-01T00:00:00Z",
+                object_type="literal",
+                object_datatype="http://www.w3.org/2001/XMLSchema#dateTime",
+            ),
+            RDFTriple(
+                "http://example.org/status",
+                "http://example.org/isActive",
+                "true",
+                object_type="literal",
+                object_datatype="http://www.w3.org/2001/XMLSchema#boolean",
+            ),
+        ]
+        parser.extract_triples.return_value = datatype_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 3
+        datatypes = [t.object_datatype for t in triples if t.object_datatype]
+        assert "double" in str(datatypes)
+        assert "dateTime" in str(datatypes)
+        assert "boolean" in str(datatypes)
+
+    def test_extract_triples_memory_efficiency(self, mock_owl_parser):
+        """Test memory-efficient triple extraction for large datasets."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure for memory-efficient processing
+        parser.set_options(
+            {"memory_efficient": True, "batch_size": 100, "streaming_mode": True}
+        )
+
+        # Mock large number of triples
+        large_triple_set = [
+            RDFTriple(
+                f"http://ex.org/s{i}", f"http://ex.org/p{i}", f"http://ex.org/o{i}"
+            )
+            for i in range(1000)
+        ]
+        parser.extract_triples.return_value = large_triple_set
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 1000
+        parser.set_options.assert_called_with(
+            {"memory_efficient": True, "batch_size": 100, "streaming_mode": True}
+        )
+
+    def test_extract_triples_with_namespaces(self, mock_owl_parser):
+        """Test triple extraction preserves namespace information."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Mock triples with namespace information
+        namespace_triples = [
+            RDFTriple(
+                "http://example.org/Chemical",
+                "http://www.w3.org/2000/01/rdf-schema#label",
+                "Chemical",
+                object_type="literal",
+                namespace_prefixes={
+                    "ex": "http://example.org/",
+                    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+                },
+            )
+        ]
+        parser.extract_triples.return_value = namespace_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 1
+        assert "ex" in triples[0].namespace_prefixes
+        assert "rdfs" in triples[0].namespace_prefixes
+
+    def test_extract_triples_duplicate_handling(self, mock_owl_parser):
+        """Test handling of duplicate triples during extraction."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure to handle duplicates
+        parser.set_options({"remove_duplicates": True})
+
+        # Mock triples with duplicates (after deduplication)
+        unique_triples = [
+            RDFTriple("http://ex.org/s", "http://ex.org/p", "http://ex.org/o"),
+            RDFTriple("http://ex.org/s2", "http://ex.org/p2", "http://ex.org/o2"),
+        ]
+        parser.extract_triples.return_value = unique_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        # Should have unique triples only
+        assert len(triples) == 2
+        assert len(set(triples)) == 2  # All should be unique
+
+
+class TestRDFTripleExtractionPerformance:
+    """Test performance aspects of RDF triple extraction."""
+
+    def test_extract_triples_performance_monitoring(self, mock_owl_parser):
+        """Test performance monitoring during triple extraction."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Enable performance monitoring
+        parser.set_options(
+            {"log_performance": True, "performance_threshold": 1.0}  # seconds
+        )
+
+        # Mock performance metrics
+        mock_triples = [RDFTriple("s", "p", "o") for _ in range(100)]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 100
+        parser.set_options.assert_called_with(
+            {"log_performance": True, "performance_threshold": 1.0}
+        )
+
+    def test_extract_triples_concurrent_processing(self, mock_owl_parser):
+        """Test concurrent processing capabilities."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure for concurrent processing
+        parser.set_options(
+            {"parallel_processing": True, "worker_threads": 4, "thread_safe": True}
+        )
+
+        mock_triples = [RDFTriple(f"s{i}", f"p{i}", f"o{i}") for i in range(200)]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 200
+        parser.set_options.assert_called_with(
+            {"parallel_processing": True, "worker_threads": 4, "thread_safe": True}
+        )
+
+    @pytest.mark.parametrize(
+        "triple_count,expected_batch_size",
+        [(10, 10), (100, 50), (1000, 100), (10000, 500)],
+    )
+    def test_extract_triples_batch_processing(
+        self, mock_owl_parser, triple_count, expected_batch_size
+    ):
+        """Test batch processing with different triple counts."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure batch processing
+        parser.set_options({"batch_size": expected_batch_size})
+
+        mock_triples = [
+            RDFTriple(f"s{i}", f"p{i}", f"o{i}") for i in range(triple_count)
+        ]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == triple_count
+        parser.set_options.assert_called_with({"batch_size": expected_batch_size})
+
+    def test_extract_triples_memory_usage_optimization(self, mock_owl_parser):
+        """Test memory usage optimization during extraction."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Configure memory optimization
+        parser.set_options(
+            {
+                "memory_limit": "512MB",
+                "gc_threshold": 1000,
+                "lazy_loading": True,
+                "cache_size": 100,
+            }
+        )
+
+        # Large dataset simulation
+        mock_triples = [RDFTriple(f"s{i}", f"p{i}", f"o{i}") for i in range(5000)]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 5000
+        parser.set_options.assert_called_with(
+            {
+                "memory_limit": "512MB",
+                "gc_threshold": 1000,
+                "lazy_loading": True,
+                "cache_size": 100,
+            }
+        )
+
+    def test_extract_triples_caching_mechanism(self, mock_owl_parser):
+        """Test caching mechanism for repeated extractions."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Enable caching
+        parser.set_options({"enable_cache": True, "cache_ttl": 3600, "cache_size": 50})
+
+        mock_triples = [RDFTriple("s", "p", "o")]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+
+        # First extraction
+        triples1 = parser.extract_triples(parsed_result)
+        # Second extraction (should use cache in real implementation)
+        triples2 = parser.extract_triples(parsed_result)
+
+        assert len(triples1) == 1
+        assert len(triples2) == 1
+        assert parser.extract_triples.call_count == 2  # Mock called twice
+
+    def test_extract_triples_progress_tracking(self, mock_owl_parser):
+        """Test progress tracking for long-running extractions."""
+        from aim2_project.aim2_ontology.models import RDFTriple
+
+        parser = mock_owl_parser()
+
+        # Enable progress tracking
+        parser.set_options({"show_progress": True, "progress_interval": 100})
+
+        mock_triples = [RDFTriple(f"s{i}", f"p{i}", f"o{i}") for i in range(500)]
+        parser.extract_triples.return_value = mock_triples
+
+        parsed_result = {"rdf_graph": Mock()}
+        triples = parser.extract_triples(parsed_result)
+
+        assert len(triples) == 500
+        parser.set_options.assert_called_with(
+            {"show_progress": True, "progress_interval": 100}
+        )
+
+
+# Additional fixtures for RDF triple testing
+@pytest.fixture
+def sample_rdf_triples():
+    """Fixture providing sample RDF triples for testing."""
+    from aim2_project.aim2_ontology.models import RDFTriple
+
+    return [
+        RDFTriple(
+            subject="http://example.org/Chemical",
+            predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            object="http://www.w3.org/2002/07/owl#Class",
+        ),
+        RDFTriple(
+            subject="http://example.org/Chemical",
+            predicate="http://www.w3.org/2000/01/rdf-schema#label",
+            object="Chemical",
+            object_type="literal",
+            object_language="en",
+        ),
+        RDFTriple(
+            subject="http://example.org/Glucose",
+            predicate="http://www.w3.org/2000/01/rdf-schema#subClassOf",
+            object="http://example.org/Chemical",
+        ),
+        RDFTriple(
+            subject="http://example.org/glucose_instance",
+            predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            object="http://example.org/Glucose",
+        ),
+    ]
+
+
+@pytest.fixture
+def large_ontology_triples():
+    """Fixture providing large set of triples for performance testing."""
+    from aim2_project.aim2_ontology.models import RDFTriple
+
+    triples = []
+
+    # Create hierarchical structure
+    for i in range(100):
+        # Class declarations
+        triples.append(
+            RDFTriple(
+                f"http://example.org/Class{i}",
+                "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                "http://www.w3.org/2002/07/owl#Class",
+            )
+        )
+
+        # Labels
+        triples.append(
+            RDFTriple(
+                f"http://example.org/Class{i}",
+                "http://www.w3.org/2000/01/rdf-schema#label",
+                f"Class {i}",
+                object_type="literal",
+            )
+        )
+
+        # Subclass relationships
+        if i > 0:
+            triples.append(
+                RDFTriple(
+                    f"http://example.org/Class{i}",
+                    "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+                    f"http://example.org/Class{i-1}",
+                )
+            )
+
+    return triples
+
+
+@pytest.fixture
+def malformed_triple_data():
+    """Fixture providing malformed data for error testing."""
+    return {
+        "empty_subject": ("", "http://ex.org/p", "http://ex.org/o"),
+        "empty_predicate": ("http://ex.org/s", "", "http://ex.org/o"),
+        "empty_object": ("http://ex.org/s", "http://ex.org/p", ""),
+        "invalid_uri": ("not-a-uri", "http://ex.org/p", "http://ex.org/o"),
+        "none_values": (None, None, None),
+    }

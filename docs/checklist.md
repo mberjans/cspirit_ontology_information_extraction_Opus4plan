@@ -79,7 +79,7 @@
 - [x] **AIM2-012-03** Write unit tests for JSON-LD parser
 - [x] **AIM2-012-04** Create AbstractParser base class
 - [x] **AIM2-012-05** Implement OWL file parser
-- [ ] **AIM2-012-06** Add RDF triple extraction
+- [x] **AIM2-012-06** Add RDF triple extraction
 - [ ] **AIM2-012-07** Implement CSV parser with headers
 - [ ] **AIM2-012-08** Add CSV dialect detection
 - [ ] **AIM2-012-09** Create JSON-LD parser

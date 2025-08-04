@@ -155,6 +155,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 import json
 import re
+import copy
 from datetime import datetime
 
 
@@ -3725,3 +3726,942 @@ class Ontology:
         # Use ID as primary hash since it should be unique
         # Include name and version as secondary components for additional distinction
         return hash((self.id, self.name, self.version))
+
+
+@dataclass
+class RDFTriple:
+    """
+    Dataclass representing an RDF triple with comprehensive metadata and validation.
+
+    This dataclass serves as the core model for representing RDF triples within
+    the AIM2 project. It provides complete triple metadata management including
+    subject, predicate, object, and additional semantic information for
+    comprehensive RDF data processing.
+
+    The RDFTriple class is designed to be flexible and extensible while maintaining
+    strict validation for triple integrity. It supports various RDF formats and
+    standards commonly used in semantic web and knowledge representation, with
+    comprehensive validation and serialization capabilities.
+
+    Attributes:
+        subject (str): The subject of the RDF triple (URI or blank node)
+        predicate (str): The predicate of the RDF triple (URI)
+        object (str): The object of the RDF triple (URI, literal, or blank node)
+        subject_type (str): Type of the subject ('uri', 'bnode') (default 'uri')
+        object_type (str): Type of the object ('uri', 'literal', 'bnode') (default 'uri')
+        object_datatype (Optional[str]): Datatype of literal objects (e.g., xsd:string)
+        object_language (Optional[str]): Language tag for literal objects (e.g., 'en')
+        context (Optional[str]): Named graph or context URI for the triple
+        source (Optional[str]): Source identifier where the triple was extracted from
+        confidence (float): Confidence score for the triple extraction (0.0-1.0)
+        metadata (Dict[str, Any]): Additional metadata for the triple
+        created_at (Optional[datetime]): Timestamp when the triple was created
+        namespace_prefixes (Dict[str, str]): Namespace prefix mappings for the triple
+
+    Examples:
+        # Create a basic RDF triple
+        triple = RDFTriple(
+            subject="http://example.org/Person1",
+            predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            object="http://example.org/Person"
+        )
+
+        # Create a comprehensive RDF triple with metadata
+        triple = RDFTriple(
+            subject="http://purl.obolibrary.org/obo/CHEBI_15422",
+            predicate="http://www.w3.org/2000/01/rdf-schema#label",
+            object="ATP",
+            object_type="literal",
+            object_datatype="http://www.w3.org/2001/XMLSchema#string",
+            object_language="en",
+            context="http://purl.obolibrary.org/obo/chebi.owl",
+            source="ChEBI",
+            confidence=1.0,
+            metadata={"extraction_method": "owl_parsing", "parser_version": "1.0.0"}
+        )
+
+        # Validate triple
+        if triple.is_valid():
+            print("Triple is valid")
+
+        # Serialize triple
+        triple_dict = triple.to_dict()
+        triple_json = triple.to_json()
+
+        # Deserialize triple
+        restored_triple = RDFTriple.from_dict(triple_dict)
+        restored_from_json = RDFTriple.from_json(triple_json)
+    """
+
+    subject: str
+    predicate: str
+    object: str
+    subject_type: str = "uri"
+    object_type: str = "uri"
+    object_datatype: Optional[str] = None
+    object_language: Optional[str] = None
+    context: Optional[str] = None
+    source: Optional[str] = None
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    created_at: Optional[datetime] = None
+    namespace_prefixes: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """
+        Post-initialization validation and setup.
+
+        This method is automatically called after the dataclass is initialized
+        to perform additional validation and setup that can't be done in field
+        definitions.
+        """
+        # Set creation timestamp if not provided
+        if self.created_at is None:
+            self.created_at = datetime.now()
+
+        # Validate and normalize confidence score
+        try:
+            if self.confidence is None:
+                self.confidence = 1.0
+            else:
+                self.confidence = float(self.confidence)
+                self.confidence = max(0.0, min(1.0, self.confidence))
+        except (ValueError, TypeError):
+            self.confidence = 1.0
+
+        # Ensure metadata is a dictionary
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+
+        # Ensure namespace_prefixes is a dictionary
+        if not isinstance(self.namespace_prefixes, dict):
+            self.namespace_prefixes = {}
+
+        # Auto-detect subject type if not explicitly set or if inconsistent
+        # Note: subjects can only be URI or blank nodes, never literals in RDF
+        if self.subject and isinstance(self.subject, str):
+            if self.subject_type == "uri" and self.subject.startswith("_:"):
+                self.subject_type = "bnode"
+            elif self.subject_type == "bnode" and not self.subject.startswith("_:"):
+                if self._is_valid_uri(self.subject):
+                    self.subject_type = "uri"
+                # Note: we don't auto-detect invalid subjects as literals since that's invalid in RDF
+
+        # Auto-detect object type if not explicitly set or if inconsistent
+        if self.object and isinstance(self.object, str):
+            if self.object_type == "uri":
+                if self.object.startswith("_:"):
+                    self.object_type = "bnode"
+                elif not self._is_valid_uri(self.object):
+                    self.object_type = "literal"
+            elif self.object_type == "bnode" and not self.object.startswith("_:"):
+                if self._is_valid_uri(self.object):
+                    self.object_type = "uri"
+                else:
+                    self.object_type = "literal"
+            elif self.object_type == "literal" and (
+                self.object.startswith("_:") or self._is_valid_uri(self.object)
+            ):
+                if self.object.startswith("_:"):
+                    self.object_type = "bnode"
+                else:
+                    self.object_type = "uri"
+
+        # Validate subject_type and object_type
+        valid_node_types = {"uri", "bnode", "literal"}
+        if self.subject_type not in {"uri", "bnode"}:
+            self.subject_type = "uri"
+        if self.object_type not in valid_node_types:
+            self.object_type = "uri"
+
+        # Clean up literal-specific attributes for non-literal objects
+        if self.object_type != "literal":
+            self.object_datatype = None
+            self.object_language = None
+
+    def is_valid(self) -> bool:
+        """
+        Validate the RDF triple for correctness and completeness.
+
+        This method performs comprehensive validation of the triple including
+        required fields, format validation, and semantic consistency checks.
+
+        Returns:
+            bool: True if the triple is valid, False otherwise
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple.is_valid()
+            True
+
+            >>> invalid_triple = RDFTriple(subject="", predicate="invalid", object="")
+            >>> invalid_triple.is_valid()
+            False
+        """
+        try:
+            # Check required fields
+            if not self.subject or not self.predicate or not self.object:
+                return False
+
+            # Validate subject (must be URI or blank node)
+            if self.subject_type == "uri" and not self._is_valid_uri(self.subject):
+                return False
+            elif self.subject_type == "bnode" and not self._is_valid_blank_node(
+                self.subject
+            ):
+                return False
+
+            # Validate predicate (must be URI)
+            if not self._is_valid_uri(self.predicate):
+                return False
+
+            # Validate object based on type
+            if self.object_type == "uri" and not self._is_valid_uri(self.object):
+                return False
+            elif self.object_type == "bnode" and not self._is_valid_blank_node(
+                self.object
+            ):
+                return False
+            elif self.object_type == "literal":
+                # Literal objects are generally valid as strings
+                if not isinstance(self.object, str):
+                    return False
+
+            # Validate confidence score
+            if not isinstance(self.confidence, (int, float)) or not (
+                0.0 <= self.confidence <= 1.0
+            ):
+                return False
+
+            # Validate datatype URI if provided
+            if self.object_datatype and not self._is_valid_uri(self.object_datatype):
+                return False
+
+            # Validate context URI if provided
+            if self.context and not self._is_valid_uri(self.context):
+                return False
+
+            # Validate language tag format if provided
+            if self.object_language and not self._is_valid_language_tag(
+                self.object_language
+            ):
+                return False
+
+            return True
+
+        except Exception:
+            return False
+
+    def _is_valid_uri(self, uri: str) -> bool:
+        """
+        Validate URI format.
+
+        Args:
+            uri (str): URI to validate
+
+        Returns:
+            bool: True if URI is valid, False otherwise
+        """
+        if not uri or not isinstance(uri, str):
+            return False
+
+        # More strict URI validation pattern
+        uri_pattern = re.compile(
+            r"^[a-zA-Z][a-zA-Z\d+\-.]*:"  # Scheme (must start with letter)
+            r"//[^\s/]+.*"  # Authority and path for http/https/ftp
+            r"|"  # OR
+            r"^[a-zA-Z][a-zA-Z\d+\-.]*:"  # Scheme
+            r"[^\s]+$"  # Non-empty path for other schemes (urn:, mailto:, etc.)
+        )
+
+        # Additional checks for common invalid cases
+        stripped_uri = uri.strip()
+        if stripped_uri != uri:  # No leading/trailing whitespace
+            return False
+        if stripped_uri in ["http://", "https://", "ftp://", "://"]:  # Incomplete URIs
+            return False
+        if stripped_uri.count(":") < 1:  # Must have at least one colon
+            return False
+
+        return bool(uri_pattern.match(stripped_uri))
+
+    def _is_valid_blank_node(self, bnode: str) -> bool:
+        """
+        Validate blank node format.
+
+        Args:
+            bnode (str): Blank node identifier to validate
+
+        Returns:
+            bool: True if blank node is valid, False otherwise
+        """
+        if not bnode or not isinstance(bnode, str):
+            return False
+
+        # Blank nodes typically start with '_:' in N-Triples format
+        if not bnode.startswith("_:") or len(bnode) <= 2:
+            return False
+
+        # The local part (after '_:') should be a valid identifier
+        local_part = bnode[2:]  # Remove '_:' prefix
+
+        # Check for empty or whitespace-only local part
+        if not local_part or not local_part.strip():
+            return False
+
+        # Check for spaces in the local part (not allowed in blank nodes)
+        if " " in local_part:
+            return False
+
+        # Local part should be non-empty after stripping whitespace
+        if local_part.strip() != local_part:
+            return False
+
+        return True
+
+    def _is_valid_language_tag(self, lang_tag: str) -> bool:
+        """
+        Validate language tag format (simplified RFC 3066).
+
+        Args:
+            lang_tag (str): Language tag to validate
+
+        Returns:
+            bool: True if language tag is valid, False otherwise
+        """
+        if not lang_tag or not isinstance(lang_tag, str):
+            return False
+
+        # Simplified language tag pattern (e.g., 'en', 'en-US', 'de-DE')
+        lang_pattern = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
+        return bool(lang_pattern.match(lang_tag.strip()))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the RDF triple to a dictionary representation.
+
+        Returns:
+            Dict[str, Any]: Dictionary representation of the triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple_dict = triple.to_dict()
+            >>> isinstance(triple_dict, dict)
+            True
+            >>> triple_dict['subject']
+            'http://example.org/Person1'
+        """
+        return {
+            "subject": self.subject,
+            "predicate": self.predicate,
+            "object": self.object,
+            "subject_type": self.subject_type,
+            "object_type": self.object_type,
+            "object_datatype": self.object_datatype,
+            "object_language": self.object_language,
+            "context": self.context,
+            "source": self.source,
+            "confidence": self.confidence,
+            "metadata": copy.deepcopy(self.metadata),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "namespace_prefixes": copy.deepcopy(self.namespace_prefixes),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RDFTriple":
+        """
+        Create an RDF triple from a dictionary representation.
+
+        Args:
+            data (Dict[str, Any]): Dictionary containing triple data
+
+        Returns:
+            RDFTriple: RDFTriple instance created from the dictionary
+
+        Raises:
+            ValueError: If required fields are missing or invalid
+
+        Examples:
+            >>> data = {
+            ...     "subject": "http://example.org/Person1",
+            ...     "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     "object": "http://example.org/Person"
+            ... }
+            >>> triple = RDFTriple.from_dict(data)
+            >>> triple.subject
+            'http://example.org/Person1'
+        """
+        # Extract required fields
+        try:
+            subject = data["subject"]
+            predicate = data["predicate"]
+            object_val = data["object"]
+        except KeyError as e:
+            raise ValueError(f"Missing required field: {e}")
+
+        # Parse created_at timestamp if provided
+        created_at = None
+        if "created_at" in data and data["created_at"]:
+            try:
+                created_at = datetime.fromisoformat(data["created_at"])
+            except (ValueError, TypeError):
+                created_at = None
+
+        # Create instance with all available fields
+        return cls(
+            subject=subject,
+            predicate=predicate,
+            object=object_val,
+            subject_type=data.get("subject_type", "uri"),
+            object_type=data.get("object_type", "uri"),
+            object_datatype=data.get("object_datatype"),
+            object_language=data.get("object_language"),
+            context=data.get("context"),
+            source=data.get("source"),
+            confidence=data.get("confidence", 1.0),
+            metadata=data.get("metadata", {}),
+            created_at=created_at,
+            namespace_prefixes=data.get("namespace_prefixes", {}),
+        )
+
+    def to_json(self, indent: Optional[int] = None) -> str:
+        """
+        Convert the RDF triple to a JSON string representation.
+
+        Args:
+            indent (Optional[int]): Number of spaces for indentation (None for compact)
+
+        Returns:
+            str: JSON string representation of the triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> json_str = triple.to_json()
+            >>> isinstance(json_str, str)
+            True
+            >>> '"subject"' in json_str
+            True
+        """
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "RDFTriple":
+        """
+        Create an RDF triple from a JSON string representation.
+
+        Args:
+            json_str (str): JSON string containing triple data
+
+        Returns:
+            RDFTriple: RDFTriple instance created from the JSON
+
+        Raises:
+            ValueError: If JSON is invalid or required fields are missing
+
+        Examples:
+            >>> json_data = '{"subject": "http://example.org/Person1", "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "object": "http://example.org/Person"}'
+            >>> triple = RDFTriple.from_json(json_data)
+            >>> triple.subject
+            'http://example.org/Person1'
+        """
+        try:
+            data = json.loads(json_str)
+            return cls.from_dict(data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON: {e}")
+
+    def to_ntriples(self) -> str:
+        """
+        Convert the RDF triple to N-Triples format.
+
+        Returns:
+            str: N-Triples representation of the triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> nt = triple.to_ntriples()
+            >>> '<http://example.org/Person1>' in nt
+            True
+        """
+        # Format subject
+        if self.subject_type == "bnode":
+            subject_str = self.subject
+        else:
+            subject_str = f"<{self.subject}>"
+
+        # Format predicate (always URI)
+        predicate_str = f"<{self.predicate}>"
+
+        # Format object
+        if self.object_type == "uri":
+            object_str = f"<{self.object}>"
+        elif self.object_type == "bnode":
+            object_str = self.object
+        else:  # literal
+            # Escape quotes in literal
+            escaped_object = self.object.replace("\\", "\\\\").replace('"', '\\"')
+            object_str = f'"{escaped_object}"'
+
+            if self.object_datatype:
+                object_str += f"^^<{self.object_datatype}>"
+            elif self.object_language:
+                object_str += f"@{self.object_language}"
+
+        return f"{subject_str} {predicate_str} {object_str} ."
+
+    def get_compact_form(
+        self, namespace_prefixes: Optional[Dict[str, str]] = None
+    ) -> str:
+        """
+        Get a compact string representation using namespace prefixes.
+
+        Args:
+            namespace_prefixes (Optional[Dict[str, str]]): Namespace prefix mappings
+
+        Returns:
+            str: Compact representation of the triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> prefixes = {
+            ...     "ex": "http://example.org/",
+            ...     "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            ... }
+            >>> compact = triple.get_compact_form(prefixes)
+            >>> "ex:Person1" in compact and "rdf:type" in compact
+            True
+        """
+        # Use provided prefixes or instance prefixes
+        prefixes = namespace_prefixes or self.namespace_prefixes
+
+        # Helper function to compact URIs
+        def compact_uri(uri: str) -> str:
+            for prefix, namespace in prefixes.items():
+                if uri.startswith(namespace):
+                    return f"{prefix}:{uri[len(namespace):]}"
+            return f"<{uri}>"
+
+        # Format subject
+        if self.subject_type == "bnode":
+            subject_str = self.subject
+        else:
+            subject_str = compact_uri(self.subject)
+
+        # Format predicate
+        predicate_str = compact_uri(self.predicate)
+
+        # Format object
+        if self.object_type == "uri":
+            object_str = compact_uri(self.object)
+        elif self.object_type == "bnode":
+            object_str = self.object
+        else:  # literal
+            object_str = f'"{self.object}"'
+            if self.object_datatype:
+                object_str += f"^^{compact_uri(self.object_datatype)}"
+            elif self.object_language:
+                object_str += f"@{self.object_language}"
+
+        return f"{subject_str} {predicate_str} {object_str}"
+
+    def __str__(self) -> str:
+        """
+        String representation of the RDF triple.
+
+        Returns:
+            str: Human-readable string representation
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> str(triple)
+            'RDFTriple(subject=http://example.org/Person1, predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.org/Person)'
+        """
+        return f"RDFTriple(subject={self.subject}, predicate={self.predicate}, object={self.object})"
+
+    def __repr__(self) -> str:
+        """
+        Detailed string representation of the RDF triple.
+
+        Returns:
+            str: Detailed string representation suitable for debugging
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> repr(triple)  # doctest: +ELLIPSIS
+            'RDFTriple(subject=http://example.org/Person1, predicate=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, object=http://example.org/Person, confidence=1.0)'
+        """
+        return (
+            f"RDFTriple("
+            f"subject={self.subject}, "
+            f"predicate={self.predicate}, "
+            f"object={self.object}, "
+            f"confidence={self.confidence})"
+        )
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        Check equality with another RDF triple.
+
+        Two RDF triples are considered equal if they have the same subject,
+        predicate, object, and types. Other metadata is not considered for equality.
+
+        Args:
+            other (Any): Object to compare with
+
+        Returns:
+            bool: True if triples are equal, False otherwise
+
+        Examples:
+            >>> triple1 = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple2 = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple1 == triple2
+            True
+
+            >>> triple3 = RDFTriple(
+            ...     subject="http://example.org/Person2",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple1 == triple3
+            False
+        """
+        if not isinstance(other, RDFTriple):
+            return False
+
+        return (
+            self.subject == other.subject
+            and self.predicate == other.predicate
+            and self.object == other.object
+            and self.subject_type == other.subject_type
+            and self.object_type == other.object_type
+            and self.object_datatype == other.object_datatype
+            and self.object_language == other.object_language
+        )
+
+    def __hash__(self) -> int:
+        """
+        Generate a hash code for the RDF triple.
+
+        Uses the triple components (subject, predicate, object) and their types
+        as the hash components. This allows triples to be used in sets and as
+        dictionary keys while ensuring that semantically identical triples have
+        the same hash.
+
+        Returns:
+            int: Hash code for the triple
+
+        Examples:
+            >>> triple1 = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> triple2 = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> hash(triple1) == hash(triple2)
+            True
+
+            >>> triple_set = {triple1, triple2}
+            >>> len(triple_set)  # Should be 1 since they're equal
+            1
+        """
+        # Use triple components and types as hash components
+        return hash(
+            (
+                self.subject,
+                self.predicate,
+                self.object,
+                self.subject_type,
+                self.object_type,
+                self.object_datatype,
+                self.object_language,
+            )
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert RDF triple to dictionary representation.
+
+        Returns:
+            Dict[str, Any]: Dictionary representation of the RDF triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> result = triple.to_dict()
+            >>> result['subject']
+            'http://example.org/Person1'
+        """
+        result = {
+            "subject": self.subject,
+            "predicate": self.predicate,
+            "object": self.object,
+            "subject_type": self.subject_type,
+            "object_type": self.object_type,
+            "confidence": self.confidence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+        # Add optional fields if present
+        if self.object_datatype:
+            result["object_datatype"] = self.object_datatype
+        if self.object_language:
+            result["object_language"] = self.object_language
+        if self.context:
+            result["context"] = self.context
+        if self.source:
+            result["source"] = self.source
+        if self.metadata:
+            result["metadata"] = copy.deepcopy(self.metadata)
+        if self.namespace_prefixes:
+            result["namespace_prefixes"] = copy.deepcopy(self.namespace_prefixes)
+
+        return result
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RDFTriple":
+        """
+        Create RDF triple from dictionary representation.
+
+        Args:
+            data (Dict[str, Any]): Dictionary containing triple data
+
+        Returns:
+            RDFTriple: New RDF triple instance
+
+        Examples:
+            >>> data = {
+            ...     'subject': 'http://example.org/Person1',
+            ...     'predicate': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+            ...     'object': 'http://example.org/Person'
+            ... }
+            >>> triple = RDFTriple.from_dict(data)
+            >>> triple.subject
+            'http://example.org/Person1'
+        """
+        # Parse created_at if present
+        created_at = None
+        if data.get("created_at"):
+            try:
+                created_at = datetime.fromisoformat(data["created_at"])
+            except (ValueError, TypeError):
+                created_at = datetime.now()
+
+        return cls(
+            subject=data["subject"],
+            predicate=data["predicate"],
+            object=data["object"],
+            subject_type=data.get("subject_type", "uri"),
+            object_type=data.get("object_type", "uri"),
+            object_datatype=data.get("object_datatype"),
+            object_language=data.get("object_language"),
+            context=data.get("context"),
+            source=data.get("source"),
+            confidence=data.get("confidence", 1.0),
+            metadata=copy.deepcopy(data.get("metadata", {})),
+            namespace_prefixes=copy.deepcopy(data.get("namespace_prefixes", {})),
+            created_at=created_at,
+        )
+
+    def to_json(self) -> str:
+        """
+        Convert RDF triple to JSON string representation.
+
+        Returns:
+            str: JSON string representation of the RDF triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> json_str = triple.to_json()
+            >>> '"subject"' in json_str
+            True
+        """
+        return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "RDFTriple":
+        """
+        Create RDF triple from JSON string representation.
+
+        Args:
+            json_str (str): JSON string containing triple data
+
+        Returns:
+            RDFTriple: New RDF triple instance
+
+        Examples:
+            >>> json_data = '{"subject": "http://example.org/Person1", "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "object": "http://example.org/Person"}'
+            >>> triple = RDFTriple.from_json(json_data)
+            >>> triple.subject
+            'http://example.org/Person1'
+        """
+        data = json.loads(json_str)
+        return cls.from_dict(data)
+
+    def to_turtle(self) -> str:
+        """
+        Convert RDF triple to Turtle format representation.
+
+        Returns:
+            str: Turtle format representation of the RDF triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> turtle = triple.to_turtle()
+            >>> 'http://example.org/Person1' in turtle
+            True
+        """
+
+        def format_uri(uri: str) -> str:
+            """Format URI with angle brackets for Turtle."""
+            return f"<{uri}>"
+
+        def format_literal(
+            value: str, datatype: Optional[str] = None, language: Optional[str] = None
+        ) -> str:
+            """Format literal value for Turtle."""
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            literal = f'"{escaped}"'
+
+            if datatype:
+                literal += f"^^{format_uri(datatype)}"
+            elif language:
+                literal += f"@{language}"
+
+            return literal
+
+        # Format subject
+        if self.subject_type == "bnode":
+            subject_str = self.subject  # Blank nodes already have correct format
+        else:
+            subject_str = format_uri(self.subject)
+
+        # Format predicate (always URI)
+        predicate_str = format_uri(self.predicate)
+
+        # Format object
+        if self.object_type == "uri":
+            object_str = format_uri(self.object)
+        elif self.object_type == "bnode":
+            object_str = self.object
+        else:  # literal
+            object_str = format_literal(
+                self.object, self.object_datatype, self.object_language
+            )
+
+        return f"{subject_str} {predicate_str} {object_str} ."
+
+    def to_ntriples(self) -> str:
+        """
+        Convert RDF triple to N-Triples format representation.
+
+        Returns:
+            str: N-Triples format representation of the RDF triple
+
+        Examples:
+            >>> triple = RDFTriple(
+            ...     subject="http://example.org/Person1",
+            ...     predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            ...     object="http://example.org/Person"
+            ... )
+            >>> ntriples = triple.to_ntriples()
+            >>> 'http://example.org/Person1' in ntriples
+            True
+        """
+
+        def format_uri(uri: str) -> str:
+            """Format URI with angle brackets for N-Triples."""
+            return f"<{uri}>"
+
+        def format_literal(
+            value: str, datatype: Optional[str] = None, language: Optional[str] = None
+        ) -> str:
+            """Format literal value for N-Triples."""
+            # Escape special characters
+            escaped = (
+                value.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            )
+
+            literal = f'"{escaped}"'
+
+            if datatype:
+                literal += f"^^{format_uri(datatype)}"
+            elif language:
+                literal += f"@{language}"
+
+            return literal
+
+        # Format subject
+        if self.subject_type == "bnode":
+            subject_str = self.subject  # Blank nodes keep their format
+        else:
+            subject_str = format_uri(self.subject)
+
+        # Format predicate (always URI)
+        predicate_str = format_uri(self.predicate)
+
+        # Format object
+        if self.object_type == "uri":
+            object_str = format_uri(self.object)
+        elif self.object_type == "bnode":
+            object_str = self.object
+        else:  # literal
+            object_str = format_literal(
+                self.object, self.object_datatype, self.object_language
+            )
+
+        return f"{subject_str} {predicate_str} {object_str} ."

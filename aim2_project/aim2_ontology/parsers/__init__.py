@@ -34,10 +34,10 @@ from datetime import datetime
 
 # Import project-specific modules
 try:
-    from ..models import Term, Relationship, Ontology
+    from ..models import Term, Relationship, Ontology, RDFTriple
 except ImportError:
     # Fallback for development/testing
-    Term = Relationship = Ontology = None
+    Term = Relationship = Ontology = RDFTriple = None
 
 try:
     from ...exceptions import (
@@ -348,9 +348,9 @@ class AbstractParser(ABC):
             str: Cache key
         """
         # Create hash of content and relevant kwargs
-        content_hash = hashlib.md5(content.encode()).hexdigest()
+        content_hash = hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
         kwargs_str = str(sorted(kwargs.items()))
-        kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()
+        kwargs_hash = hashlib.md5(kwargs_str.encode(), usedforsecurity=False).hexdigest()
         return f"{content_hash}_{kwargs_hash}"
 
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
@@ -875,6 +875,7 @@ class OWLParser(AbstractParser):
         # Set up OWL-specific default options
         owl_defaults = {
             "validate_on_parse": True,
+            "extract_triples_on_parse": False,  # Off by default to avoid performance impact
             "strict_validation": False,
             "include_imports": True,
             "preserve_namespaces": True,
@@ -910,6 +911,7 @@ class OWLParser(AbstractParser):
         base_options = super()._get_default_options()
         owl_options = {
             "validate_on_parse": True,
+            "extract_triples_on_parse": False,  # Off by default to avoid performance impact
             "strict_validation": False,
             "include_imports": True,
             "preserve_namespaces": True,
@@ -1091,6 +1093,21 @@ class OWLParser(AbstractParser):
             if self.options.get("validate_on_parse", True):
                 result["validation"] = self.validate_owl(content, **kwargs)
 
+            # Add triple extraction results if requested
+            if self.options.get("extract_triples_on_parse", True):
+                try:
+                    result["triples"] = self.extract_triples(result)
+                    result["triple_count"] = len(result["triples"])
+                except Exception as e:
+                    if self.options.get("continue_on_error", True):
+                        self.logger.warning(
+                            f"Failed to extract triples during parsing: {str(e)}"
+                        )
+                        result["triples"] = []
+                        result["triple_count"] = 0
+                    else:
+                        raise
+
             return result
 
         except Exception as e:
@@ -1245,10 +1262,19 @@ class OWLParser(AbstractParser):
         try:
             import urllib.request
             import urllib.error
+            from urllib.parse import urlparse
+
+            # Validate URL scheme for security
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in ('http', 'https'):
+                raise OntologyException(
+                    f"Unsupported URL scheme: {parsed_url.scheme}. Only http and https are allowed.",
+                    context={"url": url, "scheme": parsed_url.scheme}
+                )
 
             timeout = self.options.get("timeout_seconds", 300)
 
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            with urllib.request.urlopen(url, timeout=timeout) as response:  # nosec B310
                 content = response.read().decode("utf-8")
 
             kwargs["source_url"] = url
@@ -1690,6 +1716,535 @@ class OWLParser(AbstractParser):
                 self.logger.warning(f"Failed to extract RDF metadata: {str(e)}")
 
         return metadata
+
+    def extract_triples(self, parsed_result: Any) -> List["RDFTriple"]:
+        """Extract RDF triples from parsed OWL.
+
+        This method extracts all RDF triples from the parsed OWL result, providing
+        comprehensive triple-level access to the ontology data. It supports extraction
+        from both rdflib Graph objects and owlready2 ontology objects, with proper
+        metadata and confidence scoring.
+
+        Args:
+            parsed_result (Any): Result from parse method containing rdf_graph and/or owl_ontology
+
+        Returns:
+            List[RDFTriple]: List of extracted RDF triples with comprehensive metadata
+
+        Examples:
+            >>> parser = OWLParser()
+            >>> content = '''<?xml version="1.0"?>
+            ... <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            ...          xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+            ...          xmlns:owl="http://www.w3.org/2002/07/owl#">
+            ...   <owl:Class rdf:about="http://example.org/Person">
+            ...     <rdfs:label>Person</rdfs:label>
+            ...   </owl:Class>
+            ... </rdf:RDF>'''
+            >>> parsed = parser.parse(content)
+            >>> triples = parser.extract_triples(parsed)
+            >>> len(triples) > 0
+            True
+            >>> any(t.predicate.endswith('label') for t in triples)
+            True
+        """
+        triples = []
+
+        if not isinstance(parsed_result, dict):
+            self.logger.warning("Invalid parsed result format for triple extraction")
+            return triples
+
+        # Import RDFTriple model (with fallback)
+        try:
+            from ..models import RDFTriple
+        except ImportError:
+            # Create minimal triple structure for testing
+            class RDFTriple:
+                def __init__(self, subject=None, predicate=None, object=None, **kwargs):
+                    self.subject = subject
+                    self.predicate = predicate
+                    self.object = object
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            # Extract metadata for triples
+            extraction_metadata = {
+                "extraction_method": "owl_parsing",
+                "parser_version": "1.0.0",
+                "source_format": parsed_result.get("format", "unknown"),
+                "extracted_at": time.time(),
+            }
+
+            # Get source information if available
+            source_info = parsed_result.get("options_used", {}).get(
+                "source_file", "unknown"
+            )
+
+            # Extract from RDF graph (primary method)
+            rdf_graph = parsed_result.get("rdf_graph")
+            if rdf_graph and self._rdflib_available:
+                triples.extend(
+                    self._extract_triples_from_rdf_graph(
+                        rdf_graph, source_info, extraction_metadata
+                    )
+                )
+
+            # Extract from OWL ontology as supplement/fallback
+            owl_ontology = parsed_result.get("owl_ontology")
+            if owl_ontology and self._owlready2_available and not triples:
+                # Only use owlready2 extraction if rdflib didn't produce results
+                triples.extend(
+                    self._extract_triples_from_owl_ontology(
+                        owl_ontology, source_info, extraction_metadata
+                    )
+                )
+
+            # Apply filters if configured
+            if self.options.get("conversion_filters", {}).get("namespace_filter"):
+                triples = self._filter_triples_by_namespace(triples)
+
+            # Log extraction statistics
+            if self.options.get("log_performance", True):
+                self.logger.info(
+                    f"Extracted {len(triples)} RDF triples from {parsed_result.get('format', 'unknown')} format"
+                )
+
+            return triples
+
+        except Exception as e:
+            error_msg = f"Failed to extract triples: {str(e)}"
+            self.logger.error(error_msg)
+            if self.options.get("continue_on_error", True):
+                return triples  # Return whatever we managed to extract
+            else:
+                raise OntologyException(
+                    error_msg, context={"parser": "owl", "method": "extract_triples"}
+                )
+
+    def _extract_triples_from_rdf_graph(
+        self, rdf_graph: Any, source_info: str, extraction_metadata: Dict[str, Any]
+    ) -> List["RDFTriple"]:
+        """Extract triples from rdflib Graph object.
+
+        Args:
+            rdf_graph: rdflib Graph object
+            source_info: Source information for the triples
+            extraction_metadata: Metadata about the extraction process
+
+        Returns:
+            List[RDFTriple]: List of extracted triples
+        """
+        triples = []
+
+        try:
+            # Import RDFTriple for type hints
+            from ..models import RDFTriple
+        except ImportError:
+            # Fallback for testing
+            class RDFTriple:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            # Get namespace mappings from the graph
+            namespace_prefixes = dict(rdf_graph.namespaces())
+
+            # Extract all triples from the graph
+            triple_count = 0
+            for subject, predicate, obj in rdf_graph:
+                try:
+                    # Determine node types
+                    subject_type = self._determine_node_type(subject)
+                    object_type = self._determine_node_type(obj)
+
+                    # Extract object datatype and language for literals
+                    object_datatype = None
+                    object_language = None
+                    if object_type == "literal" and hasattr(obj, "datatype"):
+                        object_datatype = str(obj.datatype) if obj.datatype else None
+                    if object_type == "literal" and hasattr(obj, "language"):
+                        object_language = obj.language if obj.language else None
+
+                    # Create RDF triple with comprehensive metadata
+                    triple = RDFTriple(
+                        subject=str(subject),
+                        predicate=str(predicate),
+                        object=str(obj),
+                        subject_type=subject_type,
+                        object_type=object_type,
+                        object_datatype=object_datatype,
+                        object_language=object_language,
+                        source=source_info,
+                        confidence=1.0,  # High confidence for directly parsed triples
+                        metadata=copy.deepcopy(extraction_metadata),
+                        namespace_prefixes=namespace_prefixes,
+                    )
+
+                    triples.append(triple)
+                    triple_count += 1
+
+                    # Apply batch size limits if configured
+                    batch_size = self.options.get("batch_size", 1000)
+                    if batch_size > 0 and triple_count >= batch_size:
+                        if self.options.get("log_warnings", True):
+                            self.logger.warning(
+                                f"Reached batch size limit of {batch_size} triples"
+                            )
+                        break
+
+                except Exception as e:
+                    if self.options.get("continue_on_error", True):
+                        self.logger.warning(
+                            f"Failed to extract triple {subject} {predicate} {obj}: {str(e)}"
+                        )
+                        continue
+                    else:
+                        raise
+
+            self.logger.debug(f"Extracted {len(triples)} triples from RDF graph")
+            return triples
+
+        except Exception as e:
+            error_msg = f"Failed to extract triples from RDF graph: {str(e)}"
+            self.logger.error(error_msg)
+            if self.options.get("continue_on_error", True):
+                return triples
+            else:
+                raise OntologyException(error_msg)
+
+    def _extract_triples_from_owl_ontology(
+        self, owl_ontology: Any, source_info: str, extraction_metadata: Dict[str, Any]
+    ) -> List["RDFTriple"]:
+        """Extract triples from owlready2 ontology object.
+
+        This method serves as a fallback when rdflib extraction fails or
+        for accessing OWL-specific constructs that may not be fully represented
+        in the RDF graph.
+
+        Args:
+            owl_ontology: owlready2 ontology object
+            source_info: Source information for the triples
+            extraction_metadata: Metadata about the extraction process
+
+        Returns:
+            List[RDFTriple]: List of extracted triples
+        """
+        triples = []
+
+        try:
+            # Import RDFTriple for type hints
+            from ..models import RDFTriple
+        except ImportError:
+            # Fallback for testing
+            class RDFTriple:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            # Extract basic namespace information
+            namespace_prefixes = {}
+            if hasattr(owl_ontology, "base_iri") and owl_ontology.base_iri:
+                namespace_prefixes[""] = str(owl_ontology.base_iri)
+
+            # Common RDF/OWL namespaces
+            namespace_prefixes.update(
+                {
+                    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+                    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+                    "owl": "http://www.w3.org/2002/07/owl#",
+                    "xsd": "http://www.w3.org/2001/XMLSchema#",
+                }
+            )
+
+            # Extract class-related triples
+            if self.options.get("conversion_filters", {}).get("include_classes", True):
+                triples.extend(
+                    self._extract_class_triples(
+                        owl_ontology,
+                        source_info,
+                        extraction_metadata,
+                        namespace_prefixes,
+                    )
+                )
+
+            # Extract property-related triples
+            if self.options.get("conversion_filters", {}).get(
+                "include_properties", True
+            ):
+                triples.extend(
+                    self._extract_property_triples(
+                        owl_ontology,
+                        source_info,
+                        extraction_metadata,
+                        namespace_prefixes,
+                    )
+                )
+
+            # Extract individual-related triples
+            if self.options.get("conversion_filters", {}).get(
+                "include_individuals", True
+            ):
+                triples.extend(
+                    self._extract_individual_triples(
+                        owl_ontology,
+                        source_info,
+                        extraction_metadata,
+                        namespace_prefixes,
+                    )
+                )
+
+            self.logger.debug(f"Extracted {len(triples)} triples from OWL ontology")
+            return triples
+
+        except Exception as e:
+            error_msg = f"Failed to extract triples from OWL ontology: {str(e)}"
+            self.logger.error(error_msg)
+            if self.options.get("continue_on_error", True):
+                return triples
+            else:
+                raise OntologyException(error_msg)
+
+    def _extract_class_triples(
+        self,
+        owl_ontology: Any,
+        source_info: str,
+        extraction_metadata: Dict[str, Any],
+        namespace_prefixes: Dict[str, str],
+    ) -> List["RDFTriple"]:
+        """Extract triples related to OWL classes."""
+        triples = []
+
+        try:
+            from ..models import RDFTriple
+        except ImportError:
+
+            class RDFTriple:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            for cls in owl_ontology.classes():
+                class_iri = str(cls.iri) if hasattr(cls, "iri") else str(cls)
+
+                # Class type triple
+                triples.append(
+                    RDFTriple(
+                        subject=class_iri,
+                        predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                        object="http://www.w3.org/2002/07/owl#Class",
+                        source=source_info,
+                        confidence=1.0,
+                        metadata=copy.deepcopy(extraction_metadata),
+                        namespace_prefixes=namespace_prefixes,
+                    )
+                )
+
+                # Label triples
+                if hasattr(cls, "label") and cls.label:
+                    for label in cls.label:
+                        triples.append(
+                            RDFTriple(
+                                subject=class_iri,
+                                predicate="http://www.w3.org/2000/01/rdf-schema#label",
+                                object=str(label),
+                                object_type="literal",
+                                object_datatype="http://www.w3.org/2001/XMLSchema#string",
+                                source=source_info,
+                                confidence=1.0,
+                                metadata=copy.deepcopy(extraction_metadata),
+                                namespace_prefixes=namespace_prefixes,
+                            )
+                        )
+
+                # Comment/definition triples
+                if hasattr(cls, "comment") and cls.comment:
+                    for comment in cls.comment:
+                        triples.append(
+                            RDFTriple(
+                                subject=class_iri,
+                                predicate="http://www.w3.org/2000/01/rdf-schema#comment",
+                                object=str(comment),
+                                object_type="literal",
+                                object_datatype="http://www.w3.org/2001/XMLSchema#string",
+                                source=source_info,
+                                confidence=1.0,
+                                metadata=copy.deepcopy(extraction_metadata),
+                                namespace_prefixes=namespace_prefixes,
+                            )
+                        )
+
+        except Exception as e:
+            self.logger.warning(f"Failed to extract class triples: {str(e)}")
+
+        return triples
+
+    def _extract_property_triples(
+        self,
+        owl_ontology: Any,
+        source_info: str,
+        extraction_metadata: Dict[str, Any],
+        namespace_prefixes: Dict[str, str],
+    ) -> List["RDFTriple"]:
+        """Extract triples related to OWL properties."""
+        triples = []
+
+        try:
+            from ..models import RDFTriple
+        except ImportError:
+
+            class RDFTriple:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            for prop in owl_ontology.properties():
+                prop_iri = str(prop.iri) if hasattr(prop, "iri") else str(prop)
+
+                # Property type triple
+                triples.append(
+                    RDFTriple(
+                        subject=prop_iri,
+                        predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                        object="http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
+                        source=source_info,
+                        confidence=1.0,
+                        metadata=copy.deepcopy(extraction_metadata),
+                        namespace_prefixes=namespace_prefixes,
+                    )
+                )
+
+                # Label triples
+                if hasattr(prop, "label") and prop.label:
+                    for label in prop.label:
+                        triples.append(
+                            RDFTriple(
+                                subject=prop_iri,
+                                predicate="http://www.w3.org/2000/01/rdf-schema#label",
+                                object=str(label),
+                                object_type="literal",
+                                object_datatype="http://www.w3.org/2001/XMLSchema#string",
+                                source=source_info,
+                                confidence=1.0,
+                                metadata=copy.deepcopy(extraction_metadata),
+                                namespace_prefixes=namespace_prefixes,
+                            )
+                        )
+
+        except Exception as e:
+            self.logger.warning(f"Failed to extract property triples: {str(e)}")
+
+        return triples
+
+    def _extract_individual_triples(
+        self,
+        owl_ontology: Any,
+        source_info: str,
+        extraction_metadata: Dict[str, Any],
+        namespace_prefixes: Dict[str, str],
+    ) -> List["RDFTriple"]:
+        """Extract triples related to OWL individuals."""
+        triples = []
+
+        try:
+            from ..models import RDFTriple
+        except ImportError:
+
+            class RDFTriple:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+
+        try:
+            for individual in owl_ontology.individuals():
+                individual_iri = (
+                    str(individual.iri)
+                    if hasattr(individual, "iri")
+                    else str(individual)
+                )
+
+                # Individual type triples
+                if hasattr(individual, "is_a"):
+                    for class_type in individual.is_a:
+                        class_iri = (
+                            str(class_type.iri)
+                            if hasattr(class_type, "iri")
+                            else str(class_type)
+                        )
+                        triples.append(
+                            RDFTriple(
+                                subject=individual_iri,
+                                predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                                object=class_iri,
+                                source=source_info,
+                                confidence=1.0,
+                                metadata=copy.deepcopy(extraction_metadata),
+                                namespace_prefixes=namespace_prefixes,
+                            )
+                        )
+
+        except Exception as e:
+            self.logger.warning(f"Failed to extract individual triples: {str(e)}")
+
+        return triples
+
+    def _determine_node_type(self, node: Any) -> str:
+        """Determine the type of an RDF node (URI, blank node, or literal).
+
+        Args:
+            node: RDF node from rdflib
+
+        Returns:
+            str: Node type ('uri', 'bnode', or 'literal')
+        """
+        if not self._rdflib_available:
+            return "uri"  # Default assumption
+
+        try:
+            if isinstance(node, self._rdflib.URIRef):
+                return "uri"
+            elif isinstance(node, self._rdflib.BNode):
+                return "bnode"
+            elif isinstance(node, self._rdflib.Literal):
+                return "literal"
+            else:
+                return "uri"  # Default fallback
+        except Exception:
+            return "uri"  # Fallback on any error
+
+    def _filter_triples_by_namespace(
+        self, triples: List["RDFTriple"]
+    ) -> List["RDFTriple"]:
+        """Filter triples by namespace if namespace filter is configured.
+
+        Args:
+            triples: List of RDF triples to filter
+
+        Returns:
+            List[RDFTriple]: Filtered list of triples
+        """
+        namespace_filter = self.options.get("conversion_filters", {}).get(
+            "namespace_filter"
+        )
+        if not namespace_filter:
+            return triples
+
+        filtered_triples = []
+        for triple in triples:
+            # Check if subject or object matches the namespace filter
+            if triple.subject.startswith(namespace_filter) or triple.object.startswith(
+                namespace_filter
+            ):
+                filtered_triples.append(triple)
+
+        self.logger.debug(
+            f"Filtered {len(triples)} triples to {len(filtered_triples)} based on namespace filter"
+        )
+        return filtered_triples
 
 
 class CSVParser(AbstractParser):

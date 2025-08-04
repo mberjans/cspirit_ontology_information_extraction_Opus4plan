@@ -103,13 +103,6 @@ repos:
         args:
           - --profile=black
           - --line-length=88
-          - --multi-line=3
-          - --trailing-comma
-          - --force-grid-wrap=0
-          - --use-parentheses
-          - --ensure-newline-before-comments
-          - --src-paths=aim2_project,tests
-          - --known-first-party=aim2_project
         files: '\.pyi?$'
         exclude: |
           (?x)(
