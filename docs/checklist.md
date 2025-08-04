@@ -96,7 +96,7 @@
 - [x] **AIM2-013-07** Create caching mechanism
 - [x] **AIM2-013-08** Implement statistics calculator
 - [x] **AIM2-013-09** Add export functionality
-- [ ] **AIM2-013-10** Create merge operations
+- [x] **AIM2-013-10** Create merge operations
 - [ ] **AIM2-013-11** Implement subset extraction
 - [ ] **AIM2-013-12** Add validation checks
 - [ ] **AIM2-013-13** Run manager unit tests
