@@ -144,6 +144,8 @@ __all__ = [
     "JSONLDParser",
     "PDFParser",
     "XMLParser",
+    # Reference parsing
+    "ReferenceParser",
     # Format auto-detection functions
     "detect_format_from_extension",
     "detect_format_from_content",
@@ -9334,3 +9336,8 @@ try:
     from .xml_parser import XMLParser
 except ImportError:
     XMLParser = None
+
+try:
+    from .reference_parser import ReferenceParser
+except ImportError:
+    ReferenceParser = None
