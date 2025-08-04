@@ -81,10 +81,10 @@
 - [x] **AIM2-012-05** Implement OWL file parser
 - [x] **AIM2-012-06** Add RDF triple extraction
 - [x] **AIM2-012-07** Implement CSV parser with headers
-- [ ] **AIM2-012-08** Add CSV dialect detection
-- [ ] **AIM2-012-09** Create JSON-LD parser
-- [ ] **AIM2-012-10** Implement error recovery logic
-- [ ] **AIM2-012-11** Add progress reporting
+- [x] **AIM2-012-08** Add CSV dialect detection
+- [x] **AIM2-012-09** Create JSON-LD parser
+- [x] **AIM2-012-10** Implement error recovery logic
+- [x] **AIM2-012-11** Add progress reporting
 - [ ] **AIM2-012-12** Create format auto-detection
 - [ ] **AIM2-012-13** Run all parser unit tests
 - [ ] **AIM2-013-01** Write unit tests for loading logic
