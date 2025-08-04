@@ -32,7 +32,9 @@ import pytest
 # Import the modules to be tested
 try:
     from aim2_project.aim2_ontology.models import Ontology, Relationship, Term
-    from aim2_project.aim2_ontology.ontology_manager import OntologyManager
+    from aim2_project.aim2_ontology.ontology_manager import (
+        OntologyManager,
+    )
     from aim2_project.aim2_ontology.parsers import ParseResult
 except ImportError:
     import warnings
@@ -1502,43 +1504,43 @@ class TestOntologyManagerMultiSource:
                         "local_path": str(temp_dir / "chebi.owl"),
                         "url": "https://example.com/chebi.owl",
                         "format": "owl",
-                        "description": "Chemical Entities of Biological Interest",
+                        "description": "Chemical Entities of Biological Interest"
                     },
                     "chemont": {
                         "enabled": True,
                         "local_path": str(temp_dir / "chemont.obo"),
                         "url": "https://example.com/chemont.obo",
                         "format": "obo",
-                        "description": "Chemical Ontology",
+                        "description": "Chemical Ontology"
                     },
                     "peco": {
                         "enabled": True,
                         "local_path": str(temp_dir / "peco.owl"),
                         "url": "https://example.com/peco.owl",
                         "format": "owl",
-                        "description": "Plant Experimental Conditions Ontology",
+                        "description": "Plant Experimental Conditions Ontology"
                     },
                     "trait_ontology": {
                         "enabled": True,
                         "local_path": str(temp_dir / "to.owl"),
                         "url": "https://example.com/to.owl",
                         "format": "owl",
-                        "description": "Plant Trait Ontology",
+                        "description": "Plant Trait Ontology"
                     },
                     "pmn": {
                         "enabled": False,  # Disabled for this test
                         "local_path": str(temp_dir / "pmn.owl"),
                         "url": "https://example.com/pmn.owl",
                         "format": "biopax_owl",
-                        "description": "Plant Metabolic Network",
+                        "description": "Plant Metabolic Network"
                     },
                     "chemfont": {
                         "enabled": True,
                         "local_path": str(temp_dir / "chemfont.owl"),
                         "url": "https://example.com/chemfont.owl",
                         "format": "owl",
-                        "description": "Chemical Functional Ontology",
-                    },
+                        "description": "Chemical Functional Ontology"
+                    }
                 }
             }
         }
@@ -1548,7 +1550,7 @@ class TestOntologyManagerMultiSource:
         for source_name, config in mock_config_data["ontology"]["sources"].items():
             if config["enabled"]:
                 file_path = Path(config["local_path"])
-
+                
                 # Create sample ontology
                 ontology = Ontology(
                     id=f"{source_name.replace('_', '').upper()}:000001",
@@ -1568,7 +1570,7 @@ class TestOntologyManagerMultiSource:
                     namespaces=[f"{source_name}_namespace"],
                 )
                 test_ontologies[source_name] = ontology
-
+                
                 # Create dummy file content
                 if config["format"] == "owl":
                     content = f"""<?xml version="1.0"?>
@@ -1592,16 +1594,14 @@ def: "Test term 1 from {source_name}" []
 """
                 else:
                     content = f"# {source_name} ontology file content"
-
+                
                 file_path.write_text(content)
 
         # Mock ConfigManager
         mock_config_manager = Mock()
         mock_config_manager.get.return_value = mock_config_data["ontology"]["sources"]
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             # Create parsers for enabled sources
             parsers = []
             for source_name, config in mock_config_data["ontology"]["sources"].items():
@@ -1617,20 +1617,17 @@ def: "Test term 1 from {source_name}" []
                         parse_time=0.1,
                     )
                     parsers.append(parser)
-
+            
             mock_auto_detect.side_effect = parsers
 
             # Load from configuration
             results = ontology_manager.load_from_config(
-                config_manager=mock_config_manager, enabled_only=True
+                config_manager=mock_config_manager,
+                enabled_only=True
             )
 
             # Verify results
-            enabled_sources = [
-                name
-                for name, config in mock_config_data["ontology"]["sources"].items()
-                if config["enabled"]
-            ]
+            enabled_sources = [name for name, config in mock_config_data["ontology"]["sources"].items() if config["enabled"]]
             assert len(results) == len(enabled_sources)
             assert all(r.success for r in results)
 
@@ -1641,12 +1638,10 @@ def: "Test term 1 from {source_name}" []
             for source_name in enabled_sources:
                 found = False
                 for ontology in ontology_manager.ontologies.values():
-                    if source_name.replace("_", "").upper() in ontology.id:
+                    if source_name.replace('_', '').upper() in ontology.id:
                         found = True
                         break
-                assert (
-                    found
-                ), f"Ontology from {source_name} not found in loaded ontologies"
+                assert found, f"Ontology from {source_name} not found in loaded ontologies"
 
             # Verify statistics
             stats = ontology_manager.get_statistics()
@@ -1660,25 +1655,25 @@ def: "Test term 1 from {source_name}" []
         sources_metadata = [
             {
                 "name": "sourceone",
-                "format": "owl",
+                "format": "owl", 
                 "size": "large",
                 "terms_count": 100,
-                "file_ext": ".owl",
+                "file_ext": ".owl"
             },
             {
-                "name": "sourcetwo",
+                "name": "sourcetwo", 
                 "format": "csv",
-                "size": "medium",
+                "size": "medium", 
                 "terms_count": 50,
-                "file_ext": ".csv",
+                "file_ext": ".csv"
             },
             {
                 "name": "sourcethree",
                 "format": "jsonld",
                 "size": "small",
-                "terms_count": 25,
-                "file_ext": ".jsonld",
-            },
+                "terms_count": 25, 
+                "file_ext": ".jsonld"
+            }
         ]
 
         file_paths = []
@@ -1712,9 +1707,7 @@ def: "Test term 1 from {source_name}" []
             file_path.write_text(f"# {meta['name']} test content")
             file_paths.append(str(file_path))
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             # Create parsers with metadata
             parsers = []
             for i, meta in enumerate(sources_metadata):
@@ -1730,12 +1723,9 @@ def: "Test term 1 from {source_name}" []
                         "size_category": meta["size"],
                         "terms_parsed": meta["terms_count"],
                         "source_name": meta["name"],
-                        "processing_notes": f"Processed {meta['terms_count']} terms",
+                        "processing_notes": f"Processed {meta['terms_count']} terms"
                     },
-                    parse_time=0.1
-                    + (
-                        meta["terms_count"] / 1000.0
-                    ),  # Variable parse time based on size
+                    parse_time=0.1 + (meta["terms_count"] / 1000.0),  # Variable parse time based on size
                 )
                 parsers.append(parser)
 
@@ -1751,23 +1741,21 @@ def: "Test term 1 from {source_name}" []
             # Verify source metadata tracking
             for i, result in enumerate(results):
                 meta = sources_metadata[i]
-
+                
                 # Check result metadata (OntologyManager provides these standard fields)
                 assert result.metadata["format"] == meta["format"]
                 assert result.metadata["terms_count"] == meta["terms_count"]
                 assert "parse_time" in result.metadata
-
+                
                 # Verify source path tracking
                 assert result.source_path == file_paths[i]
-
+                
                 # Verify load time tracking (should be reasonable)
                 assert result.load_time > 0, "Load time should be positive"
-                assert (
-                    result.load_time < 1.0
-                ), "Load time should be reasonable for mocked operations"
+                assert result.load_time < 1.0, "Load time should be reasonable for mocked operations"
 
             # Verify source-specific statistics if available
-            if hasattr(ontology_manager, "source_stats"):
+            if hasattr(ontology_manager, 'source_stats'):
                 assert len(ontology_manager.source_stats) == len(file_paths)
                 for file_path in file_paths:
                     assert file_path in ontology_manager.source_stats
@@ -1775,7 +1763,7 @@ def: "Test term 1 from {source_name}" []
     def test_configuration_validation_multi_source(self, ontology_manager):
         """Test configuration validation for multiple sources."""
         # Test various configuration validation scenarios
-
+        
         # Test 1: Valid configuration
         valid_config = {
             "ontology": {
@@ -1784,18 +1772,20 @@ def: "Test term 1 from {source_name}" []
                         "enabled": True,
                         "local_path": "/tmp/valid.owl",
                         "url": "https://example.com/valid.owl",
-                        "format": "owl",
+                        "format": "owl"
                     }
                 }
             }
         }
-
+        
         mock_config_manager = Mock()
         mock_config_manager.get.return_value = valid_config["ontology"]["sources"]
-
+        
         # Should not raise exception for valid config
         filtered_sources = ontology_manager._filter_configured_sources(
-            valid_config["ontology"]["sources"], source_filter=None, enabled_only=True
+            valid_config["ontology"]["sources"],
+            source_filter=None,
+            enabled_only=True
         )
         assert len(filtered_sources) == 1
         assert "valid_source" in filtered_sources
@@ -1803,9 +1793,11 @@ def: "Test term 1 from {source_name}" []
         # Test 2: Empty configuration
         empty_config = {}
         mock_config_manager.get.return_value = empty_config
-
+        
         filtered_sources = ontology_manager._filter_configured_sources(
-            empty_config, source_filter=None, enabled_only=True
+            empty_config,
+            source_filter=None,
+            enabled_only=True
         )
         assert len(filtered_sources) == 0
 
@@ -1814,23 +1806,27 @@ def: "Test term 1 from {source_name}" []
             "disabled_source1": {
                 "enabled": False,
                 "local_path": "/tmp/disabled1.owl",
-                "format": "owl",
+                "format": "owl"
             },
             "disabled_source2": {
                 "enabled": False,
-                "local_path": "/tmp/disabled2.owl",
-                "format": "owl",
-            },
+                "local_path": "/tmp/disabled2.owl", 
+                "format": "owl"
+            }
         }
-
+        
         filtered_sources = ontology_manager._filter_configured_sources(
-            disabled_config, source_filter=None, enabled_only=True
+            disabled_config,
+            source_filter=None,
+            enabled_only=True
         )
         assert len(filtered_sources) == 0
-
+        
         # But should include disabled when enabled_only=False
         filtered_sources = ontology_manager._filter_configured_sources(
-            disabled_config, source_filter=None, enabled_only=False
+            disabled_config,
+            source_filter=None,
+            enabled_only=False
         )
         assert len(filtered_sources) == 2
 
@@ -1838,12 +1834,14 @@ def: "Test term 1 from {source_name}" []
         mixed_config = {
             "source_a": {"enabled": True, "local_path": "/tmp/a.owl", "format": "owl"},
             "source_b": {"enabled": True, "local_path": "/tmp/b.owl", "format": "owl"},
-            "source_c": {"enabled": True, "local_path": "/tmp/c.owl", "format": "owl"},
+            "source_c": {"enabled": True, "local_path": "/tmp/c.owl", "format": "owl"}
         }
-
+        
         # Filter for specific sources
         filtered_sources = ontology_manager._filter_configured_sources(
-            mixed_config, source_filter=["source_a", "source_c"], enabled_only=True
+            mixed_config,
+            source_filter=["source_a", "source_c"],
+            enabled_only=True
         )
         assert len(filtered_sources) == 2
         assert "source_a" in filtered_sources
@@ -1852,28 +1850,20 @@ def: "Test term 1 from {source_name}" []
 
         # Test 5: Invalid source filter (non-existent source)
         filtered_sources = ontology_manager._filter_configured_sources(
-            mixed_config, source_filter=["nonexistent_source"], enabled_only=True
+            mixed_config,
+            source_filter=["nonexistent_source"],
+            enabled_only=True
         )
         assert len(filtered_sources) == 0
 
-    def test_error_handling_mixed_success_failure_detailed(
-        self, ontology_manager, temp_dir
-    ):
+    def test_error_handling_mixed_success_failure_detailed(self, ontology_manager, temp_dir):
         """Test detailed error handling when some sources succeed and others fail."""
         # Create a mix of scenarios
         test_scenarios = [
             {"name": "success_owl", "should_succeed": True, "error_type": None},
-            {
-                "name": "missing_file",
-                "should_succeed": False,
-                "error_type": "file_not_found",
-            },
+            {"name": "missing_file", "should_succeed": False, "error_type": "file_not_found"},
             {"name": "success_csv", "should_succeed": True, "error_type": None},
-            {
-                "name": "parse_error",
-                "should_succeed": False,
-                "error_type": "parse_failure",
-            },
+            {"name": "parse_error", "should_succeed": False, "error_type": "parse_failure"},
             {"name": "no_parser", "should_succeed": False, "error_type": "no_parser"},
             {"name": "success_json", "should_succeed": True, "error_type": None},
         ]
@@ -1900,54 +1890,49 @@ def: "Test term 1 from {source_name}" []
                     namespaces=[f"{scenario['name']}_ns"],
                 )
                 expected_ontologies.append(ontology)
-
+                
                 file_path = temp_dir / f"{scenario['name']}.test"
                 file_path.write_text(f"# {scenario['name']} content")
                 file_paths.append(str(file_path))
-
+            
             elif scenario["error_type"] == "file_not_found":
                 # Non-existent file
                 file_paths.append(str(temp_dir / f"{scenario['name']}_nonexistent.owl"))
-
+            
             elif scenario["error_type"] == "parse_error":
                 # File exists but parsing fails
                 file_path = temp_dir / f"{scenario['name']}.corrupt"
                 file_path.write_text("corrupted content that will fail parsing")
                 file_paths.append(str(file_path))
-
+            
             elif scenario["error_type"] == "no_parser":
                 # File exists but no parser available
                 file_path = temp_dir / f"{scenario['name']}.unknown_format"
                 file_path.write_text("content in unknown format")
                 file_paths.append(str(file_path))
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
-
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             def mock_parser_behavior(file_path=None, **kwargs):
                 file_path_str = str(file_path) if file_path else ""
-
+                
                 # Find matching scenario
                 scenario = None
                 for s in test_scenarios:
                     if s["name"] in file_path_str:
                         scenario = s
                         break
-
+                
                 # Debug output
-                print(
-                    f"Mock called for: {file_path_str}, matched scenario: {scenario['name'] if scenario else None}"
-                )
-
+                print(f"Mock called for: {file_path_str}, matched scenario: {scenario['name'] if scenario else None}")
+                
                 if not scenario:
                     return None
-
+                
                 if scenario["should_succeed"]:
                     # Create successful parser
                     parser = Mock()
                     parser.format_name = "test_format"
-
+                    
                     # Get expected ontology
                     ontology = None
                     successful_index = 0
@@ -1959,7 +1944,7 @@ def: "Test term 1 from {source_name}" []
                             break
                         elif s["should_succeed"]:
                             successful_index += 1
-
+                    
                     parser.parse.return_value = ParseResult(
                         success=True,
                         data=ontology,
@@ -1969,11 +1954,11 @@ def: "Test term 1 from {source_name}" []
                         parse_time=0.1,
                     )
                     return parser
-
+                
                 elif scenario["error_type"] == "file_not_found":
                     # This case is handled by file existence check before parser creation
                     return None
-
+                
                 elif scenario["error_type"] == "parse_error":
                     # Parser exists but fails
                     parser = Mock()
@@ -1981,19 +1966,17 @@ def: "Test term 1 from {source_name}" []
                     parser.parse.return_value = ParseResult(
                         success=False,
                         data=None,
-                        errors=[
-                            f"Parse error in {scenario['name']}: corrupted content"
-                        ],
+                        errors=[f"Parse error in {scenario['name']}: corrupted content"],
                         warnings=[],
                         metadata={},
                         parse_time=0.05,
                     )
                     return parser
-
+                
                 elif scenario["error_type"] == "no_parser":
                     # No parser available
                     return None
-
+                
                 return None
 
             mock_auto_detect.side_effect = mock_parser_behavior
@@ -2011,52 +1994,36 @@ def: "Test term 1 from {source_name}" []
 
             for i, result in enumerate(results):
                 scenario = test_scenarios[i]
-
+                
                 if scenario["should_succeed"]:
-                    assert (
-                        result.success
-                    ), f"Expected success for {scenario['name']}, got errors: {result.errors}"
+                    assert result.success, f"Expected success for {scenario['name']}, got errors: {result.errors}"
                     assert result.ontology is not None
                     assert result.source_path == file_paths[i]
                     success_count += 1
                 else:
-                    assert (
-                        not result.success
-                    ), f"Expected failure for {scenario['name']} but got success"
+                    assert not result.success, f"Expected failure for {scenario['name']} but got success"
                     assert len(result.errors) > 0
                     assert result.ontology is None
                     failure_count += 1
-
+                    
                     # Track error types
                     if scenario["error_type"] == "file_not_found":
                         error_types_found.add("file_not_found")
                         # Should contain parser-related error message (since file doesn't exist, no parser can be found)
-                        assert any(
-                            "no suitable parser" in error.lower()
-                            for error in result.errors
-                        )
+                        assert any("no suitable parser" in error.lower() for error in result.errors)
                     elif scenario["error_type"] == "parse_failure":
                         error_types_found.add("parse_failure")
                         # Debug: print actual errors
-                        print(
-                            f"Parse failure errors for {scenario['name']}: {result.errors}"
-                        )
-                        assert any(
-                            "parse error" in error.lower()
-                            or "failed to parse" in error.lower()
-                            for error in result.errors
-                        )
+                        print(f"Parse failure errors for {scenario['name']}: {result.errors}")
+                        assert any("parse error" in error.lower() or "failed to parse" in error.lower() for error in result.errors)
                     elif scenario["error_type"] == "no_parser":
                         error_types_found.add("no_parser")
-                        assert any(
-                            "no suitable parser" in error.lower()
-                            for error in result.errors
-                        )
+                        assert any("no suitable parser" in error.lower() for error in result.errors)
 
             # Verify counts
             expected_successes = sum(1 for s in test_scenarios if s["should_succeed"])
             expected_failures = len(test_scenarios) - expected_successes
-
+            
             assert success_count == expected_successes
             assert failure_count == expected_failures
 
@@ -2070,9 +2037,7 @@ def: "Test term 1 from {source_name}" []
             assert stats["failed_loads"] == expected_failures
 
             # Verify different error types were encountered
-            assert (
-                len(error_types_found) >= 2
-            ), "Should have encountered multiple error types"
+            assert len(error_types_found) >= 2, "Should have encountered multiple error types"
 
     def test_new_configuration_sources_validation(self, ontology_manager):
         """Test validation of new configuration sources (ChemOnt, PMN, PECO, Trait Ontology, ChemFont)."""
@@ -2084,7 +2049,7 @@ def: "Test term 1 from {source_name}" []
                 "local_path": "./data/ontologies/chemont.obo",
                 "format": "obo",
                 "description": "Chemical Ontology (ChemOnt) - comprehensive chemical taxonomy",
-                "update_frequency": "quarterly",
+                "update_frequency": "quarterly"
             },
             "pmn": {
                 "enabled": True,
@@ -2094,7 +2059,7 @@ def: "Test term 1 from {source_name}" []
                 "description": "Plant Metabolic Network - plant metabolism pathways and compounds",
                 "license_required": True,
                 "contact": "curator@plantcyc.org",
-                "update_frequency": "monthly",
+                "update_frequency": "monthly"
             },
             "peco": {
                 "enabled": True,
@@ -2102,7 +2067,7 @@ def: "Test term 1 from {source_name}" []
                 "local_path": "./data/ontologies/peco.owl",
                 "format": "owl",
                 "description": "Plant Experimental Conditions Ontology - experimental treatments and conditions",
-                "update_frequency": "monthly",
+                "update_frequency": "monthly"
             },
             "trait_ontology": {
                 "enabled": True,
@@ -2110,7 +2075,7 @@ def: "Test term 1 from {source_name}" []
                 "local_path": "./data/ontologies/to.owl",
                 "format": "owl",
                 "description": "Plant Trait Ontology - phenotypic traits in plants",
-                "update_frequency": "monthly",
+                "update_frequency": "monthly"
             },
             "chemfont": {
                 "enabled": True,
@@ -2119,15 +2084,17 @@ def: "Test term 1 from {source_name}" []
                 "format": "owl",
                 "description": "Chemical Functional Ontology - functions and actions of biological chemicals",
                 "update_frequency": "quarterly",
-                "download_note": "Access OWL file via Downloads tab on website",
-            },
+                "download_note": "Access OWL file via Downloads tab on website"
+            }
         }
 
         # Test filtering all new sources
         filtered_sources = ontology_manager._filter_configured_sources(
-            new_sources_config, source_filter=None, enabled_only=True
+            new_sources_config,
+            source_filter=None,
+            enabled_only=True
         )
-
+        
         # All sources should be included (all enabled)
         assert len(filtered_sources) == 5
         expected_sources = {"chemont", "pmn", "peco", "trait_ontology", "chemfont"}
@@ -2135,7 +2102,9 @@ def: "Test term 1 from {source_name}" []
 
         # Test filtering specific new sources
         chemical_sources = ontology_manager._filter_configured_sources(
-            new_sources_config, source_filter=["chemont", "chemfont"], enabled_only=True
+            new_sources_config,
+            source_filter=["chemont", "chemfont"],
+            enabled_only=True
         )
         assert len(chemical_sources) == 2
         assert "chemont" in chemical_sources
@@ -2145,7 +2114,7 @@ def: "Test term 1 from {source_name}" []
         plant_sources = ontology_manager._filter_configured_sources(
             new_sources_config,
             source_filter=["pmn", "peco", "trait_ontology"],
-            enabled_only=True,
+            enabled_only=True
         )
         assert len(plant_sources) == 3
         assert "pmn" in plant_sources
@@ -2167,20 +2136,14 @@ def: "Test term 1 from {source_name}" []
         required_fields = ["enabled", "local_path", "format", "description"]
         for source_name, config in new_sources_config.items():
             for field in required_fields:
-                assert (
-                    field in config
-                ), f"Missing required field '{field}' in {source_name} configuration"
-
+                assert field in config, f"Missing required field '{field}' in {source_name} configuration"
+            
             # Validate format values
             valid_formats = ["owl", "obo", "biopax_owl", "csv", "jsonld"]
-            assert (
-                config["format"] in valid_formats
-            ), f"Invalid format '{config['format']}' for {source_name}"
-
+            assert config["format"] in valid_formats, f"Invalid format '{config['format']}' for {source_name}"
+            
             # Validate boolean fields
-            assert isinstance(
-                config["enabled"], bool
-            ), f"'enabled' should be boolean for {source_name}"
+            assert isinstance(config["enabled"], bool), f"'enabled' should be boolean for {source_name}"
 
         # Test mixed enable/disable scenarios
         mixed_config = new_sources_config.copy()
@@ -2188,18 +2151,20 @@ def: "Test term 1 from {source_name}" []
         mixed_config["chemfont"]["enabled"] = False
 
         enabled_only = ontology_manager._filter_configured_sources(
-            mixed_config, source_filter=None, enabled_only=True
+            mixed_config,
+            source_filter=None,
+            enabled_only=True
         )
         assert len(enabled_only) == 3  # chemont, peco, trait_ontology
 
         all_sources = ontology_manager._filter_configured_sources(
-            mixed_config, source_filter=None, enabled_only=False
+            mixed_config,
+            source_filter=None,
+            enabled_only=False
         )
         assert len(all_sources) == 5  # All sources regardless of enabled status
 
-    def test_statistics_calculation_multi_source_comprehensive(
-        self, ontology_manager, temp_dir
-    ):
+    def test_statistics_calculation_multi_source_comprehensive(self, ontology_manager, temp_dir):
         """Test comprehensive statistics calculation with multi-source data."""
         # Create diverse ontologies with different characteristics
         test_data = [
@@ -2207,12 +2172,7 @@ def: "Test term 1 from {source_name}" []
             {"name": "medium", "terms": 100, "relationships": 50, "format": "csv"},
             {"name": "large", "terms": 500, "relationships": 200, "format": "jsonld"},
             {"name": "empty", "terms": 0, "relationships": 0, "format": "owl"},
-            {
-                "name": "relationships_heavy",
-                "terms": 50,
-                "relationships": 150,
-                "format": "obo",
-            },
+            {"name": "relationships_heavy", "terms": 50, "relationships": 150, "format": "obo"},
         ]
 
         file_paths = []
@@ -2273,18 +2233,14 @@ def: "Test term 1 from {source_name}" []
         assert initial_stats["total_relationships"] == 0
         assert initial_stats["loaded_ontologies"] == 0
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             # Create parsers with varying processing times
             parsers = []
             for i, data in enumerate(test_data):
                 parser = Mock()
                 parser.format_name = data["format"]
                 # Simulate longer processing time for larger ontologies
-                processing_time = (
-                    0.05 + (data["terms"] + data["relationships"]) / 1000.0
-                )
+                processing_time = 0.05 + (data["terms"] + data["relationships"]) / 1000.0
                 parser.parse.return_value = ParseResult(
                     success=True,
                     data=expected_ontologies[i],
@@ -2293,7 +2249,7 @@ def: "Test term 1 from {source_name}" []
                     metadata={
                         "format": data["format"],
                         "complexity_score": data["terms"] + data["relationships"],
-                        "processing_notes": f"Processed {data['terms']} terms and {data['relationships']} relationships",
+                        "processing_notes": f"Processed {data['terms']} terms and {data['relationships']} relationships"
                     },
                     parse_time=processing_time,
                 )
@@ -2304,7 +2260,7 @@ def: "Test term 1 from {source_name}" []
             # Load all ontologies
             start_time = time.time()
             results = ontology_manager.load_ontologies(file_paths)
-            time.time() - start_time
+            total_load_time = time.time() - start_time
 
             # Verify all loaded successfully
             assert all(r.success for r in results)
@@ -2331,16 +2287,14 @@ def: "Test term 1 from {source_name}" []
                 expected_format_counts[fmt] = expected_format_counts.get(fmt, 0) + 1
 
             for fmt, expected_count in expected_format_counts.items():
-                assert (
-                    formats_loaded[fmt] == expected_count
-                ), f"Format {fmt}: expected {expected_count}, got {formats_loaded.get(fmt, 0)}"
+                assert formats_loaded[fmt] == expected_count, f"Format {fmt}: expected {expected_count}, got {formats_loaded.get(fmt, 0)}"
 
             # Verify cache statistics
             assert stats["cache_hits"] == 0  # First load, no cache hits
             assert stats["cache_misses"] == len(test_data)
 
             # Test statistics after reloading (should show cache hits)
-            ontology_manager.load_ontologies(file_paths)
+            results2 = ontology_manager.load_ontologies(file_paths)
             stats2 = ontology_manager.get_statistics()
 
             # Total loads should have doubled
@@ -2358,7 +2312,7 @@ def: "Test term 1 from {source_name}" []
             small_found = False
             large_found = False
             empty_found = False
-
+            
             for ontology in ontology_manager.ontologies.values():
                 if "SMALL" in ontology.id:
                     assert len(ontology.terms) == 10
@@ -2370,9 +2324,7 @@ def: "Test term 1 from {source_name}" []
                     assert len(ontology.terms) == 0
                     empty_found = True
 
-            assert (
-                small_found and large_found and empty_found
-            ), "Not all ontology sizes were found"
+            assert small_found and large_found and empty_found, "Not all ontology sizes were found"
 
             # Test statistics with failures mixed in
             # Add some failing sources
@@ -2392,11 +2344,8 @@ def: "Test term 1 from {source_name}" []
             }
 
             # Reload with failures
-            mock_auto_detect.side_effect = parsers + [
-                None,
-                None,
-            ]  # None for failing sources
-            ontology_manager.load_ontologies(all_sources)
+            mock_auto_detect.side_effect = parsers + [None, None]  # None for failing sources
+            results_with_failures = ontology_manager.load_ontologies(all_sources)
 
             stats_with_failures = ontology_manager.get_statistics()
 
@@ -2406,23 +2355,15 @@ def: "Test term 1 from {source_name}" []
             assert stats_with_failures["failed_loads"] == len(failing_sources)
 
             # Calculate success rate
-            success_rate = (
-                stats_with_failures["successful_loads"]
-                / stats_with_failures["total_loads"]
-            )
+            success_rate = stats_with_failures["successful_loads"] / stats_with_failures["total_loads"]
             expected_success_rate = len(test_data) / len(all_sources)
             assert abs(success_rate - expected_success_rate) < 0.01
 
             # Verify that only successful ontologies contribute to content statistics
             assert stats_with_failures["total_terms"] == expected_total_terms
-            assert (
-                stats_with_failures["total_relationships"]
-                == expected_total_relationships
-            )
+            assert stats_with_failures["total_relationships"] == expected_total_relationships
 
-    def test_cache_effectiveness_multi_source_comprehensive(
-        self, ontology_manager, temp_dir
-    ):
+    def test_cache_effectiveness_multi_source_comprehensive(self, ontology_manager, temp_dir):
         """Test comprehensive cache effectiveness with multi-source loading scenarios."""
         # Create test files for cache testing
         source_configs = [
@@ -2437,10 +2378,8 @@ def: "Test term 1 from {source_name}" []
 
         for config in source_configs:
             # Create sample ontology
-            term_count = {"tiny": 5, "small": 20, "medium": 50, "large": 100}[
-                config["size"]
-            ]
-
+            term_count = {"tiny": 5, "small": 20, "medium": 50, "large": 100}[config["size"]]
+            
             terms = {}
             for i in range(term_count):
                 term_id = f"{config['name'].replace('_', '').upper()}:{i+1:06d}"
@@ -2466,9 +2405,7 @@ def: "Test term 1 from {source_name}" []
             file_path.write_text(f"# {config['name']} cache test content")
             file_paths.append(str(file_path))
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             # Create parsers that track call counts
             call_counts = []
             parsers = []
@@ -2476,11 +2413,11 @@ def: "Test term 1 from {source_name}" []
             for i, config in enumerate(source_configs):
                 parser = Mock()
                 parser.format_name = config["format"]
-
+                
                 # Track calls
                 call_count = {"count": 0}
                 call_counts.append(call_count)
-
+                
                 def create_parse_func(ontology, call_counter):
                     def parse_func(*args, **kwargs):
                         call_counter["count"] += 1
@@ -2491,13 +2428,12 @@ def: "Test term 1 from {source_name}" []
                             warnings=[],
                             metadata={
                                 "cache_test": True,
-                                "call_number": call_counter["count"],
+                                "call_number": call_counter["count"]
                             },
                             parse_time=0.1,
                         )
-
                     return parse_func
-
+                
                 parser.parse = create_parse_func(expected_ontologies[i], call_count)
                 parsers.append(parser)
 
@@ -2509,11 +2445,11 @@ def: "Test term 1 from {source_name}" []
             assert initial_stats["cache_misses"] == 0
 
             results1 = ontology_manager.load_ontologies(file_paths)
-
+            
             # Verify initial load
             assert all(r.success for r in results1)
             assert len(results1) == len(file_paths)
-
+            
             stats1 = ontology_manager.get_statistics()
             assert stats1["cache_hits"] == 0
             assert stats1["cache_misses"] == len(file_paths)
@@ -2525,15 +2461,13 @@ def: "Test term 1 from {source_name}" []
 
             # Test 2: Immediate reload (all cache hits)
             results2 = ontology_manager.load_ontologies(file_paths)
-
+            
             assert all(r.success for r in results2)
             assert all(r.metadata.get("cache_hit", False) for r in results2)
-
+            
             stats2 = ontology_manager.get_statistics()
             assert stats2["cache_hits"] == len(file_paths)
-            assert stats2["cache_misses"] == len(
-                file_paths
-            )  # Unchanged from first load
+            assert stats2["cache_misses"] == len(file_paths)  # Unchanged from first load
             assert stats2["total_loads"] == len(file_paths) * 2
 
             # Verify parsers were NOT called again (still count = 1)
@@ -2543,32 +2477,25 @@ def: "Test term 1 from {source_name}" []
             # Test 3: Partial overlap reload
             partial_paths = file_paths[:2]  # First 2 files
             new_path = str(temp_dir / "new_cache_test.owl")
-
+            
             # Create new ontology and file
             new_ontology = Ontology(
                 id="NEWCACHE:000001",
                 name="New Cache Test",
                 version="1.0",
-                terms={
-                    "NEW:000001": Term(
-                        id="NEW:000001",
-                        name="New Term",
-                        definition="New definition",
-                        namespace="new_ns",
-                    )
-                },
+                terms={"NEW:000001": Term(id="NEW:000001", name="New Term", definition="New definition", namespace="new_ns")},
                 relationships={},
                 namespaces=["new_ns"],
             )
-
+            
             new_file = Path(new_path)
             new_file.write_text("# New cache test content")
-
+            
             # Create parser for new file
             new_parser = Mock()
             new_parser.format_name = "owl"
             new_call_count = {"count": 0}
-
+            
             def new_parse_func(*args, **kwargs):
                 new_call_count["count"] += 1
                 return ParseResult(
@@ -2579,20 +2506,20 @@ def: "Test term 1 from {source_name}" []
                     metadata={"new_cache_test": True},
                     parse_time=0.1,
                 )
-
+            
             new_parser.parse = new_parse_func
-
+            
             # Reset mock to handle new file
             mock_auto_detect.side_effect = [new_parser]
-
+            
             mixed_paths = partial_paths + [new_path]
             initial_cache_hits = stats2["cache_hits"]
             initial_cache_misses = stats2["cache_misses"]
-
+            
             results3 = ontology_manager.load_ontologies(mixed_paths)
-
+            
             assert all(r.success for r in results3)
-
+            
             stats3 = ontology_manager.get_statistics()
             # Should have 2 more cache hits (partial_paths) and 1 more miss (new_path)
             assert stats3["cache_hits"] == initial_cache_hits + 2
@@ -2606,62 +2533,58 @@ def: "Test term 1 from {source_name}" []
             # Test 4: Cache size limit behavior
             # Create manager with limited cache size
             limited_manager = OntologyManager(enable_caching=True, cache_size_limit=2)
-
+            
             # Reset parsers for limited manager test
             for call_count in call_counts:
                 call_count["count"] = 0
-
+            
             mock_auto_detect.side_effect = parsers
-
+            
             # Load all files (more than cache limit)
             results4 = limited_manager.load_ontologies(file_paths)
-
+            
             assert all(r.success for r in results4)
             assert len(limited_manager.ontologies) == len(file_paths)
-
+            
             # Cache should be limited to cache_size_limit
             assert len(limited_manager._cache) == limited_manager.cache_size_limit
-
+            
             stats4 = limited_manager.get_statistics()
-            assert stats4["cache_misses"] == len(
-                file_paths
-            )  # All initial loads are misses
-
+            assert stats4["cache_misses"] == len(file_paths)  # All initial loads are misses
+            
             # Test that cache eviction works correctly
             # Reload first files - some should hit cache, others should miss due to eviction
             results5 = limited_manager.load_ontologies(file_paths[:2])
             stats5 = limited_manager.get_statistics()
-
+            
             # With LRU eviction and size limit 2, behavior depends on implementation details
             # At minimum, we should see some cache activity
             assert stats5["total_loads"] > stats4["total_loads"]
 
             # Test 5: Cache invalidation and refresh
             original_manager = ontology_manager
-
+            
             # Simulate file modification by clearing cache
             original_manager.clear_cache()
-
+            
             # Reset parsers
             for call_count in call_counts:
                 call_count["count"] = 0
-
+                
             mock_auto_detect.side_effect = parsers
-
+            
             # Reload should result in cache misses
             results6 = original_manager.load_ontologies(file_paths)
-
+            
             assert all(r.success for r in results6)
-
+            
             # Verify parsers were called again after cache clear
             for call_count in call_counts:
                 assert call_count["count"] == 1
-
+                
             # Final statistics verification
             final_stats = original_manager.get_statistics()
-            assert (
-                final_stats["cache_misses"] > stats2["cache_misses"]
-            )  # More misses after cache clear
+            assert final_stats["cache_misses"] > stats2["cache_misses"]  # More misses after cache clear
 
     def test_performance_stats_multi_source(self, ontology_manager, temp_dir):
         """Test performance statistics tracking for multi-source operations."""
@@ -2705,15 +2628,13 @@ def: "Test term 1 from {source_name}" []
             file_path.write_text(f"# {scenario['name']} performance test content")
             file_paths.append(str(file_path))
 
-        with patch(
-            "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser"
-        ) as mock_auto_detect:
+        with patch("aim2_project.aim2_ontology.ontology_manager.auto_detect_parser") as mock_auto_detect:
             # Create parsers with specific processing times
             parsers = []
             for i, scenario in enumerate(complexity_scenarios):
                 parser = Mock()
                 parser.format_name = "csv"
-
+                
                 def create_slow_parse(ontology, delay):
                     def slow_parse(*args, **kwargs):
                         time.sleep(delay)  # Simulate processing time
@@ -2725,12 +2646,9 @@ def: "Test term 1 from {source_name}" []
                             metadata={"processing_complexity": delay},
                             parse_time=delay,
                         )
-
                     return slow_parse
-
-                parser.parse = create_slow_parse(
-                    expected_ontologies[i], scenario["processing_time"]
-                )
+                
+                parser.parse = create_slow_parse(expected_ontologies[i], scenario["processing_time"])
                 parsers.append(parser)
 
             mock_auto_detect.side_effect = parsers
@@ -2747,33 +2665,30 @@ def: "Test term 1 from {source_name}" []
             for i, result in enumerate(results):
                 expected_min_time = expected_times[i] - 0.05  # Allow some variance
                 expected_max_time = expected_times[i] + 0.10
-                assert (
-                    expected_min_time <= result.load_time <= expected_max_time
-                ), f"Load time for {complexity_scenarios[i]['name']}: expected ~{expected_times[i]}, got {result.load_time}"
+                assert expected_min_time <= result.load_time <= expected_max_time, \
+                    f"Load time for {complexity_scenarios[i]['name']}: expected ~{expected_times[i]}, got {result.load_time}"
 
             # Test total time is reasonable (sum of individual times plus overhead)
             expected_total_min = sum(expected_times) - 0.1
             expected_total_max = sum(expected_times) + 0.5  # Allow for overhead
-            assert (
-                expected_total_min <= total_time <= expected_total_max
-            ), f"Total time: expected {expected_total_min}-{expected_total_max}, got {total_time}"
+            assert expected_total_min <= total_time <= expected_total_max, \
+                f"Total time: expected {expected_total_min}-{expected_total_max}, got {total_time}"
 
             # Test performance statistics if available
-            if hasattr(ontology_manager, "performance_stats"):
+            if hasattr(ontology_manager, 'performance_stats'):
                 perf_stats = ontology_manager.performance_stats
-
+                
                 # Average load time should be reasonable
                 if perf_stats.get("average_load_time", 0) > 0:
                     expected_avg = sum(expected_times) / len(expected_times)
                     actual_avg = perf_stats["average_load_time"]
-                    assert (
-                        abs(actual_avg - expected_avg) < 0.1
-                    ), f"Average load time: expected ~{expected_avg}, got {actual_avg}"
-
+                    assert abs(actual_avg - expected_avg) < 0.1, \
+                        f"Average load time: expected ~{expected_avg}, got {actual_avg}"
+                
                 # Fastest and slowest should be tracked
                 if perf_stats.get("fastest_load_time") is not None:
                     assert perf_stats["fastest_load_time"] <= min(expected_times) + 0.1
-
+                
                 if perf_stats.get("slowest_load_time") is not None:
                     assert perf_stats["slowest_load_time"] >= max(expected_times) - 0.1
 
@@ -2783,9 +2698,8 @@ def: "Test term 1 from {source_name}" []
             cached_time = time.time() - cached_start
 
             # Cached load should be significantly faster
-            assert (
-                cached_time < total_time / 2
-            ), f"Cached load should be faster: original {total_time:.3f}s, cached {cached_time:.3f}s"
+            assert cached_time < total_time / 2, \
+                f"Cached load should be faster: original {total_time:.3f}s, cached {cached_time:.3f}s"
 
             # All results should indicate cache hits
             assert all(r.metadata.get("cache_hit", False) for r in cached_results)

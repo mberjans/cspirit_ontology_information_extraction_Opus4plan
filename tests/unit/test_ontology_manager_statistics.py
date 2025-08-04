@@ -226,8 +226,8 @@ class TestOntologyManagerStatistics:
         assert stats["total_terms"] == 0
         assert stats["total_relationships"] == 0
 
-        # Verify all expected keys are present
-        expected_keys = {
+        # Verify all expected keys are present (including new multi-source statistics)
+        required_keys = {
             "total_loads",
             "successful_loads",
             "failed_loads",
@@ -241,7 +241,29 @@ class TestOntologyManagerStatistics:
             "total_terms",
             "total_relationships",
         }
-        assert set(stats.keys()) == expected_keys
+        
+        # New multi-source statistics keys
+        multisource_keys = {
+            "sources_loaded",
+            "sources_attempted",
+            "source_success_rate",
+            "sources_by_format",
+            "source_coverage",
+            "overlap_analysis",
+            "performance",
+        }
+        
+        all_expected_keys = required_keys | multisource_keys
+        actual_keys = set(stats.keys())
+        
+        # Check that all required keys are present
+        assert required_keys.issubset(actual_keys), f"Missing required keys: {required_keys - actual_keys}"
+        
+        # Check that all multisource keys are present
+        assert multisource_keys.issubset(actual_keys), f"Missing multisource keys: {multisource_keys - actual_keys}"
+        
+        # Verify no unexpected keys (allow for future extensions)
+        assert actual_keys <= all_expected_keys, f"Unexpected keys: {actual_keys - all_expected_keys}"
 
     def test_statistics_disabled_caching(self, ontology_manager_no_cache):
         """Test statistics with caching disabled."""
@@ -804,7 +826,7 @@ class TestOntologyManagerStatistics:
                 assert stats["successful_loads"] == 3
                 assert stats["failed_loads"] == 0
                 assert stats["cache_hits"] == 0  # No caching
-                assert stats["cache_misses"] == 0  # No cache tracking when disabled
+                assert stats["cache_misses"] == 3  # Cache misses tracked for statistics when disabled
                 assert stats["formats_loaded"]["owl"] == 3  # Each load counts
                 assert stats["cache_size"] == 0
                 assert stats["cache_enabled"] is False

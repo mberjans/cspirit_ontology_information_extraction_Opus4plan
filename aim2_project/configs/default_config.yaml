@@ -96,6 +96,54 @@ ontology:
       update_frequency: "weekly"
       include_deprecated: false
 
+    chemont:
+      enabled: true
+      url: "http://classyfire.wishartlab.com/system/downloads/1_0/chemont/ChemOnt_2_1.obo.zip"
+      local_path: "./data/ontologies/chemont.obo"
+      update_frequency: "quarterly"
+      include_deprecated: false
+      format: "obo"
+      description: "Chemical Ontology (ChemOnt) - comprehensive chemical taxonomy"
+
+    pmn:
+      enabled: true
+      url: "https://ftp.plantcyc.org/"  # Requires license agreement at plantcyc.org/downloads/license-agreement
+      local_path: "./data/ontologies/pmn_biopax.owl"
+      update_frequency: "monthly"
+      include_deprecated: false
+      format: "biopax_owl"
+      description: "Plant Metabolic Network - plant metabolism pathways and compounds"
+      license_required: true
+      contact: "curator@plantcyc.org"
+
+    peco:
+      enabled: true
+      url: "http://purl.obolibrary.org/obo/peco.owl"
+      local_path: "./data/ontologies/peco.owl"
+      update_frequency: "monthly"
+      include_deprecated: false
+      format: "owl"
+      description: "Plant Experimental Conditions Ontology - experimental treatments and conditions"
+
+    trait_ontology:
+      enabled: true
+      url: "http://purl.obolibrary.org/obo/to.owl"
+      local_path: "./data/ontologies/to.owl"
+      update_frequency: "monthly"
+      include_deprecated: false
+      format: "owl"
+      description: "Plant Trait Ontology - phenotypic traits in plants"
+
+    chemfont:
+      enabled: true
+      url: "https://www.chemfont.ca/"  # Navigate to Downloads tab for OWL file
+      local_path: "./data/ontologies/chemfont.owl"
+      update_frequency: "quarterly"
+      include_deprecated: false
+      format: "owl"
+      description: "Chemical Functional Ontology - functions and actions of biological chemicals"
+      download_note: "Access OWL file via Downloads tab on website"
+
   # Ontology integration and trimming settings
   integration:
     merge_strategy: "union"  # union, intersection, selective
@@ -272,6 +320,9 @@ synthetic_data:
       source_ontologies:
         - "chebi"
         - "plant_ontology"
+        - "chemont"
+        - "trait_ontology"
+        - "peco"
       synonym_expansion: true
       hierarchical_expansion: true
       max_expansions: 5

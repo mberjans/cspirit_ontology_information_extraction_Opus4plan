@@ -53,7 +53,7 @@ class TripleExtractor(ABC):
     def extract_triples(self, parsed_result: Dict[str, Any]) -> List[RDFTriple]:
         """Extract RDF triples from parsed ontology data."""
         pass
-        
+
     @abstractmethod
     def get_namespace_prefixes(self, parsed_result: Dict[str, Any]) -> Dict[str, str]:
         """Extract namespace prefixes from parsed data."""
@@ -62,7 +62,7 @@ class TripleExtractor(ABC):
 
 #### Concrete Extractors:
 
-1. **RDFlibTripleExtractor**: 
+1. **RDFlibTripleExtractor**:
    - Extracts triples directly from `rdflib.Graph` objects
    - Handles all RDF object types with proper type detection
    - Extracts namespace bindings from graph
@@ -79,7 +79,7 @@ class TripleExtractor(ABC):
 def extract_triples(self, parsed_result: Any, **kwargs) -> List[RDFTriple]:
     """
     Extract RDF triples from parsed OWL data.
-    
+
     Args:
         parsed_result: Result from parse method
         **kwargs: Extraction options
@@ -88,7 +88,7 @@ def extract_triples(self, parsed_result: Any, **kwargs) -> List[RDFTriple]:
             - exclude_predicates: Set of predicate URIs to exclude
             - max_triples: Maximum number of triples to extract
             - confidence_threshold: Minimum confidence score
-            
+
     Returns:
         List[RDFTriple]: Extracted RDF triples
     """
@@ -117,7 +117,7 @@ The existing parse result structure is enhanced to include triple extraction dat
     "content_size": int,
     "options_used": dict,
     "validation": dict,
-    
+
     # New triple extraction fields
     "triples": List[RDFTriple],           # Extracted triples
     "triple_extraction": {               # Extraction metadata
@@ -279,7 +279,7 @@ for triple in triples:
     print("Compact:", triple.to_compact_form())
     print("N-Triples:", triple.to_ntriples())
     print("JSON:", triple.to_json())
-    
+
 # Bulk serialization
 triples_data = [t.to_dict() for t in triples]
 with open("extracted_triples.json", "w") as f:

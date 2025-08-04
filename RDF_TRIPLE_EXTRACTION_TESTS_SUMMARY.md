@@ -159,13 +159,13 @@ class RDFTriple:
     def to_json(self) -> str
     def to_turtle(self) -> str
     def to_ntriples(self) -> str
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RDFTriple'
-    
+
     @classmethod  
     def from_json(cls, json_str: str) -> 'RDFTriple'
-    
+
     # Equality and hashing support
     def __eq__(self, other) -> bool
     def __hash__(self) -> int

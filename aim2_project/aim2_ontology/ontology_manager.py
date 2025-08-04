@@ -104,6 +104,15 @@ class OntologyManager:
             "formats_loaded": defaultdict(int),
         }
 
+        # Multi-source statistics tracking
+        self.source_stats = {}  # source_path -> statistics
+        self.performance_stats = {
+            "average_load_time": 0.0,
+            "total_load_time": 0.0,
+            "fastest_load_time": None,
+            "slowest_load_time": None,
+        }
+
     def load_ontology(self, source: Union[str, Path]) -> LoadResult:
         """Load a single ontology with format auto-detection.
 
@@ -162,15 +171,80 @@ class OntologyManager:
                 error_msg = f"No suitable parser found for source: {source_str}"
                 self.logger.error(error_msg)
                 self.load_stats["failed_loads"] += 1
+                failed_load_time = time.time() - start_time
+
+                # Update source-specific statistics for failure
+                self._update_source_statistics(
+                    source_str, None, failed_load_time, None, False
+                )
+
                 return LoadResult(
                     success=False,
                     source_path=source_str,
-                    load_time=time.time() - start_time,
+                    load_time=failed_load_time,
                     errors=[error_msg],
                 )
 
-            # Parse ontology
-            parse_result = parser.parse(source)
+            # Parse ontology using parse_safe for consistent ParseResult interface
+            if hasattr(parser, "parse_safe"):
+                # Read file content and use parse_safe for consistent ParseResult interface
+                try:
+                    if str(source).startswith(("http://", "https://")):
+                        # For URLs, try to use parser's URL handling if available
+                        if hasattr(parser, "parse_url"):
+                            parse_result = parser.parse_url(str(source))
+                        else:
+                            # Fallback: fetch content and parse
+                            import requests
+
+                            response = requests.get(str(source), timeout=30)
+                            response.raise_for_status()
+                            parse_result = parser.parse_safe(response.text)
+                    else:
+                        # For local files, read content and parse
+                        source_path = Path(source)
+                        if not source_path.exists():
+                            raise FileNotFoundError(f"Source file not found: {source}")
+
+                        with open(source_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+
+                        # Clear parser cache to avoid recursion issues
+                        if hasattr(parser, "clear_cache"):
+                            parser.clear_cache()
+
+                        parse_result = parser.parse_safe(content)
+                except Exception as e:
+                    # If parse_safe fails, create a ParseResult with the error
+                    from .parsers import ParseResult
+
+                    parse_result = ParseResult(
+                        success=False,
+                        errors=[f"Failed to read or parse source: {str(e)}"],
+                    )
+            else:
+                # Fallback to parse method and wrap result in ParseResult
+                try:
+                    raw_result = parser.parse(source)
+                    # Check if it's already a ParseResult
+                    if hasattr(raw_result, "success"):
+                        parse_result = raw_result
+                    else:
+                        # Wrap raw result in ParseResult
+                        from .parsers import ParseResult
+
+                        if raw_result is not None:
+                            parse_result = ParseResult(success=True, data=raw_result)
+                        else:
+                            parse_result = ParseResult(
+                                success=False, errors=["Parser returned None"]
+                            )
+                except Exception as e:
+                    from .parsers import ParseResult
+
+                    parse_result = ParseResult(
+                        success=False, errors=[f"Parser error: {str(e)}"]
+                    )
 
             if not parse_result.success or not parse_result.data:
                 error_msg = f"Failed to parse ontology from {source_str}"
@@ -179,25 +253,128 @@ class OntologyManager:
                     self.logger.error(f"Parser errors: {parse_result.errors}")
 
                 self.load_stats["failed_loads"] += 1
+                failed_load_time = time.time() - start_time
+
+                # Update source-specific statistics for parse failure
+                # Get parser format name
+            parser_format = getattr(parser, "parser_name", None)
+            if not parser_format:
+                # Fallback to get_supported_formats if available
+                if hasattr(parser, "get_supported_formats"):
+                    formats = parser.get_supported_formats()
+                    parser_format = formats[0] if formats else "unknown"
+                else:
+                    parser_format = "unknown"
+                self._update_source_statistics(
+                    source_str, None, failed_load_time, parser_format, False
+                )
+
                 return LoadResult(
                     success=False,
                     source_path=source_str,
-                    load_time=time.time() - start_time,
+                    load_time=failed_load_time,
                     errors=[error_msg] + parse_result.errors,
                     warnings=parse_result.warnings,
                 )
 
+            # Extract or convert to Ontology object
             ontology = parse_result.data
 
-            # Validate ontology structure
+            # If data is not an Ontology object, try to convert it
             if not isinstance(ontology, Ontology):
-                error_msg = f"Parser returned invalid ontology type: {type(ontology)}"
+                if hasattr(parser, "to_ontology") and ontology is not None:
+                    try:
+                        # Handle nested ParseResult structure
+                        conversion_input = parse_result
+                        if hasattr(parse_result.data, "success") and hasattr(
+                            parse_result.data, "data"
+                        ):
+                            # Data is itself a ParseResult, use the nested data
+                            conversion_input = parse_result.data
+
+                        ontology = parser.to_ontology(conversion_input)
+                    except Exception as e:
+                        error_msg = (
+                            f"Failed to convert parsed data to Ontology: {str(e)}"
+                        )
+                        self.logger.error(error_msg)
+                        self.load_stats["failed_loads"] += 1
+                        failed_load_time = time.time() - start_time
+
+                        # Update source-specific statistics for conversion failure
+                        # Get parser format name
+                        parser_format = getattr(parser, "parser_name", None)
+                        if not parser_format:
+                            # Fallback to get_supported_formats if available
+                            if hasattr(parser, "get_supported_formats"):
+                                formats = parser.get_supported_formats()
+                                parser_format = formats[0] if formats else "unknown"
+                            else:
+                                parser_format = "unknown"
+                        self._update_source_statistics(
+                            source_str, None, failed_load_time, parser_format, False
+                        )
+
+                        return LoadResult(
+                            success=False,
+                            source_path=source_str,
+                            load_time=failed_load_time,
+                            errors=[error_msg],
+                        )
+                else:
+                    error_msg = f"Parser returned invalid ontology type: {type(ontology)}, and no conversion method available"
+                    self.logger.error(error_msg)
+                    self.load_stats["failed_loads"] += 1
+                    failed_load_time = time.time() - start_time
+
+                    # Update source-specific statistics for validation failure
+                    # Get parser format name
+            parser_format = getattr(parser, "parser_name", None)
+            if not parser_format:
+                # Fallback to get_supported_formats if available
+                if hasattr(parser, "get_supported_formats"):
+                    formats = parser.get_supported_formats()
+                    parser_format = formats[0] if formats else "unknown"
+                else:
+                    parser_format = "unknown"
+                    self._update_source_statistics(
+                        source_str, None, failed_load_time, parser_format, False
+                    )
+
+                    return LoadResult(
+                        success=False,
+                        source_path=source_str,
+                        load_time=failed_load_time,
+                        errors=[error_msg],
+                    )
+
+            # Final validation that we have an Ontology object
+            if not isinstance(ontology, Ontology):
+                error_msg = (
+                    f"Final validation failed: Expected Ontology, got {type(ontology)}"
+                )
                 self.logger.error(error_msg)
                 self.load_stats["failed_loads"] += 1
+                failed_load_time = time.time() - start_time
+
+                # Update source-specific statistics for final validation failure
+                # Get parser format name
+            parser_format = getattr(parser, "parser_name", None)
+            if not parser_format:
+                # Fallback to get_supported_formats if available
+                if hasattr(parser, "get_supported_formats"):
+                    formats = parser.get_supported_formats()
+                    parser_format = formats[0] if formats else "unknown"
+                else:
+                    parser_format = "unknown"
+                self._update_source_statistics(
+                    source_str, None, failed_load_time, parser_format, False
+                )
+
                 return LoadResult(
                     success=False,
                     source_path=source_str,
-                    load_time=time.time() - start_time,
+                    load_time=failed_load_time,
                     errors=[error_msg],
                 )
 
@@ -208,12 +385,35 @@ class OntologyManager:
             if self.enable_caching and self.cache_size_limit > 0:
                 self._update_cache(source_str, ontology, start_time)
 
+            # Calculate load time first
+            load_time = time.time() - start_time
+
             # Update statistics
             self.load_stats["successful_loads"] += 1
-            parser_format = getattr(parser, "format_name", "unknown")
+            # Get parser format name
+            parser_format = getattr(parser, "parser_name", None)
+            if not parser_format:
+                # Fallback to get_supported_formats if available
+                if hasattr(parser, "get_supported_formats"):
+                    formats = parser.get_supported_formats()
+                    parser_format = formats[0] if formats else "unknown"
+                else:
+                    parser_format = "unknown"
+
+            # Ensure formats_loaded is a defaultdict
+            if not isinstance(self.load_stats["formats_loaded"], defaultdict):
+                self.load_stats["formats_loaded"] = defaultdict(
+                    int, self.load_stats["formats_loaded"]
+                )
             self.load_stats["formats_loaded"][parser_format] += 1
 
-            load_time = time.time() - start_time
+            # Update source-specific statistics
+            self._update_source_statistics(
+                source_str, ontology, load_time, parser_format, True
+            )
+
+            # Update performance statistics
+            self._update_performance_statistics(load_time)
             self.logger.info(
                 f"Successfully loaded ontology {ontology.id} from {source_str} in {load_time:.3f}s"
             )
@@ -236,11 +436,17 @@ class OntologyManager:
             error_msg = f"Unexpected error loading ontology from {source_str}: {str(e)}"
             self.logger.exception(error_msg)
             self.load_stats["failed_loads"] += 1
+            failed_load_time = time.time() - start_time
+
+            # Update source-specific statistics for unexpected error
+            self._update_source_statistics(
+                source_str, None, failed_load_time, None, False
+            )
 
             return LoadResult(
                 success=False,
                 source_path=source_str,
-                load_time=time.time() - start_time,
+                load_time=failed_load_time,
                 errors=[error_msg],
             )
 
@@ -770,6 +976,15 @@ class OntologyManager:
             for cache_key in cache_keys_to_remove:
                 del self._cache[cache_key]
 
+            # Clean up source statistics for removed ontology
+            sources_to_remove = []
+            for source_path, stats in self.source_stats.items():
+                if stats.get("ontology_id") == ontology_id:
+                    sources_to_remove.append(source_path)
+
+            for source_path in sources_to_remove:
+                del self.source_stats[source_path]
+
             self.logger.info(f"Removed ontology {ontology_id}")
 
         return removed
@@ -798,17 +1013,20 @@ class OntologyManager:
         self.logger.info(f"Cleared cache ({cache_size} entries)")
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get loading and cache statistics.
+        """Get comprehensive loading, cache, and multi-source statistics.
 
         Returns:
-            Dict[str, Any]: Dictionary containing various statistics
+            Dict[str, Any]: Dictionary containing various statistics including
+                          multi-source aggregations and performance metrics
         """
+        # Basic cache statistics
         cache_stats = {
             "cache_size": len(self._cache),
             "cache_limit": self.cache_size_limit,
             "cache_enabled": self.enable_caching,
         }
 
+        # Basic ontology statistics (aggregated across all sources)
         ontology_stats = {
             "loaded_ontologies": len(self.ontologies),
             "total_terms": sum(len(ont.terms) for ont in self.ontologies.values()),
@@ -817,11 +1035,22 @@ class OntologyManager:
             ),
         }
 
+        # Multi-source specific statistics
+        multisource_stats = self._get_multisource_statistics()
+
+        # Performance statistics
+        performance_stats = self._get_performance_statistics()
+
+        # Format statistics (ensure it's a regular dict, not defaultdict)
+        format_stats = dict(self.load_stats["formats_loaded"])
+
         return {
             **self.load_stats,
             **cache_stats,
             **ontology_stats,
-            "formats_loaded": dict(self.load_stats["formats_loaded"]),
+            **multisource_stats,
+            **performance_stats,
+            "formats_loaded": format_stats,
         }
 
     def export_ontology(
@@ -1366,6 +1595,238 @@ class OntologyManager:
 
         self._cache[source_path] = cache_entry
         self.logger.debug(f"Cached ontology from {source_path}")
+
+    def _update_source_statistics(
+        self,
+        source_path: str,
+        ontology: Optional[Ontology],
+        load_time: float,
+        format_name: Optional[str],
+        success: bool,
+    ) -> None:
+        """Update source-specific statistics.
+
+        Args:
+            source_path: Path to the source file
+            ontology: Loaded ontology (None if failed)
+            load_time: Time taken to load
+            format_name: Format of the source
+            success: Whether loading was successful
+        """
+        if source_path not in self.source_stats:
+            self.source_stats[source_path] = {
+                "load_attempts": 0,
+                "successful_loads": 0,
+                "failed_loads": 0,
+                "total_load_time": 0.0,
+                "average_load_time": 0.0,
+                "format": format_name,
+                "terms_count": 0,
+                "relationships_count": 0,
+                "last_load_time": load_time,
+                "ontology_id": None,
+            }
+
+        stats = self.source_stats[source_path]
+        stats["load_attempts"] += 1
+        stats["total_load_time"] += load_time
+        stats["average_load_time"] = stats["total_load_time"] / stats["load_attempts"]
+        stats["last_load_time"] = load_time
+
+        if success and ontology:
+            stats["successful_loads"] += 1
+            stats["terms_count"] = len(ontology.terms)
+            stats["relationships_count"] = len(ontology.relationships)
+            stats["format"] = format_name
+            stats["ontology_id"] = ontology.id
+        else:
+            stats["failed_loads"] += 1
+
+    def _update_performance_statistics(self, load_time: float) -> None:
+        """Update overall performance statistics.
+
+        Args:
+            load_time: Time taken for this load operation
+        """
+        self.performance_stats["total_load_time"] += load_time
+
+        if self.load_stats["successful_loads"] > 0:
+            self.performance_stats["average_load_time"] = (
+                self.performance_stats["total_load_time"]
+                / self.load_stats["successful_loads"]
+            )
+
+        if (
+            self.performance_stats["fastest_load_time"] is None
+            or load_time < self.performance_stats["fastest_load_time"]
+        ):
+            self.performance_stats["fastest_load_time"] = load_time
+
+        if (
+            self.performance_stats["slowest_load_time"] is None
+            or load_time > self.performance_stats["slowest_load_time"]
+        ):
+            self.performance_stats["slowest_load_time"] = load_time
+
+    def _get_multisource_statistics(self) -> Dict[str, Any]:
+        """Get multi-source specific statistics.
+
+        Returns:
+            Dict[str, Any]: Multi-source statistics including per-source breakdowns,
+                          source coverage, and overlap analysis
+        """
+        if not self.source_stats:
+            return {
+                "sources_loaded": 0,
+                "sources_attempted": 0,
+                "source_success_rate": 0.0,
+                "sources_by_format": {},
+                "source_coverage": {},
+                "overlap_analysis": {},
+            }
+
+        sources_loaded = sum(
+            1 for stats in self.source_stats.values() if stats["successful_loads"] > 0
+        )
+        sources_attempted = len(self.source_stats)
+        source_success_rate = (
+            sources_loaded / sources_attempted if sources_attempted > 0 else 0.0
+        )
+
+        # Group sources by format
+        sources_by_format = defaultdict(list)
+        for source_path, stats in self.source_stats.items():
+            if stats["format"]:
+                sources_by_format[stats["format"]].append(source_path)
+
+        # Source coverage analysis (terms and relationships per source)
+        source_coverage = {}
+        for source_path, stats in self.source_stats.items():
+            if stats["successful_loads"] > 0:
+                source_coverage[source_path] = {
+                    "terms_count": stats["terms_count"],
+                    "relationships_count": stats["relationships_count"],
+                    "format": stats["format"],
+                    "ontology_id": stats["ontology_id"],
+                    "average_load_time": stats["average_load_time"],
+                }
+
+        # Basic overlap analysis (identify common terms across ontologies)
+        overlap_analysis = self._analyze_ontology_overlap()
+
+        return {
+            "sources_loaded": sources_loaded,
+            "sources_attempted": sources_attempted,
+            "source_success_rate": source_success_rate,
+            "sources_by_format": dict(sources_by_format),
+            "source_coverage": source_coverage,
+            "overlap_analysis": overlap_analysis,
+        }
+
+    def _get_performance_statistics(self) -> Dict[str, Any]:
+        """Get performance-related statistics.
+
+        Returns:
+            Dict[str, Any]: Performance statistics including timing metrics
+        """
+        return {
+            "performance": {
+                "total_load_time": self.performance_stats["total_load_time"],
+                "average_load_time": self.performance_stats["average_load_time"],
+                "fastest_load_time": self.performance_stats["fastest_load_time"],
+                "slowest_load_time": self.performance_stats["slowest_load_time"],
+            }
+        }
+
+    def _analyze_ontology_overlap(self) -> Dict[str, Any]:
+        """Analyze overlap between loaded ontologies.
+
+        Returns:
+            Dict[str, Any]: Overlap analysis including common terms and relationships
+        """
+        if len(self.ontologies) < 2:
+            return {
+                "common_terms": [],
+                "common_relationships": [],
+                "unique_terms_per_ontology": {},
+                "overlap_matrix": {},
+            }
+
+        # Collect all terms and relationships across ontologies
+        ontology_terms = {}
+        ontology_relationships = {}
+
+        for ont_id, ontology in self.ontologies.items():
+            ontology_terms[ont_id] = set(ontology.terms.keys())
+            ontology_relationships[ont_id] = set(ontology.relationships.keys())
+
+        # Find common terms
+        all_term_sets = list(ontology_terms.values())
+        common_terms = set.intersection(*all_term_sets) if all_term_sets else set()
+
+        # Find common relationships
+        all_rel_sets = list(ontology_relationships.values())
+        common_relationships = (
+            set.intersection(*all_rel_sets) if all_rel_sets else set()
+        )
+
+        # Calculate unique terms per ontology
+        unique_terms_per_ontology = {}
+        for ont_id, terms in ontology_terms.items():
+            other_terms = set()
+            for other_id, other_terms_set in ontology_terms.items():
+                if other_id != ont_id:
+                    other_terms.update(other_terms_set)
+            unique_terms_per_ontology[ont_id] = list(terms - other_terms)
+
+        # Calculate pairwise overlap matrix
+        overlap_matrix = {}
+        ontology_ids = list(self.ontologies.keys())
+        for i, ont_id1 in enumerate(ontology_ids):
+            overlap_matrix[ont_id1] = {}
+            for ont_id2 in ontology_ids:
+                if ont_id1 == ont_id2:
+                    overlap_matrix[ont_id1][ont_id2] = 1.0
+                else:
+                    terms1 = ontology_terms[ont_id1]
+                    terms2 = ontology_terms[ont_id2]
+                    intersection = len(terms1.intersection(terms2))
+                    union = len(terms1.union(terms2))
+                    jaccard_similarity = intersection / union if union > 0 else 0.0
+                    overlap_matrix[ont_id1][ont_id2] = jaccard_similarity
+
+        return {
+            "common_terms": list(common_terms),
+            "common_relationships": list(common_relationships),
+            "unique_terms_per_ontology": unique_terms_per_ontology,
+            "overlap_matrix": overlap_matrix,
+        }
+
+    def get_ontology_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive ontology statistics with multi-source support.
+
+        This method provides detailed statistics about loaded ontologies,
+        including per-source breakdowns, format analysis, and overlap metrics.
+
+        Returns:
+            Dict[str, Any]: Comprehensive statistics dictionary
+        """
+        return self.get_statistics()  # Delegate to enhanced get_statistics method
+
+    def get_source_statistics(
+        self, source_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get statistics for a specific source or all sources.
+
+        Args:
+            source_path: Path to specific source. If None, returns all source statistics.
+
+        Returns:
+            Dict[str, Any]: Source-specific statistics
+        """
+        if source_path:
+            return self.source_stats.get(source_path, {})
+        return dict(self.source_stats)
 
 
 def main():

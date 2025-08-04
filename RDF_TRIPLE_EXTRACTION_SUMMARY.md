@@ -72,7 +72,7 @@ OWL Content → Parser.parse() → {rdf_graph, owl_ontology} → extract_triples
 
 ### Test Scripts
 - `/test_rdf_triple_extraction.py` - Comprehensive test suite (579 lines)
-- `/test_rdf_simple.py` - Simplified focused tests (200 lines) 
+- `/test_rdf_simple.py` - Simplified focused tests (200 lines)
 - `/test_minimal_rdf.py` - Minimal functionality validation (168 lines) ✅ **PASSING**
 - `/demo_rdf_extraction.py` - Feature demonstration script (205 lines)
 
