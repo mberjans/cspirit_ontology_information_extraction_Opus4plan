@@ -322,10 +322,10 @@ def test_new_error_scenario(self, mock_parser):
     # Arrange
     error = NewErrorType("Error message")
     expected_strategy = RecoveryStrategy.SKIP
-    
+
     # Act
     result = mock_parser.handle_error(error)
-    
+
     # Assert
     assert result.recovery_strategy == expected_strategy
     mock_parser.handle_error.assert_called_once_with(error)

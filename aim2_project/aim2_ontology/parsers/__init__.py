@@ -1,29 +1,64 @@
 """
 Parser Module
 
-This module provides abstract and concrete parsers for various ontology formats.
-The AbstractParser base class provides a comprehensive foundation with error handling,
-logging, configuration management, robust validation capabilities, and progress reporting.
+This module provides abstract and concrete parsers for various ontology formats with
+intelligent auto-detection capabilities. The AbstractParser base class provides a
+comprehensive foundation with error handling, logging, configuration management,
+robust validation capabilities, and progress reporting.
 
-Classes:
+Core Parser Classes:
     AbstractParser: Abstract base class for all parsers with comprehensive functionality
-    OWLParser: Concrete OWL parser implementation
-    CSVParser: Concrete CSV parser implementation
-    JSONLDParser: Concrete JSON-LD parser implementation
-    ProgressPhase: Enumeration of parsing phases for progress tracking
-    ProgressInfo: Data class containing progress information
-    ProgressReporter: Thread-safe progress reporter for parser operations
-    OperationCancelledException: Exception for operation cancellation
+    OWLParser: Concrete OWL parser implementation for RDF/OWL ontologies
+    CSVParser: Concrete CSV parser implementation with dialect auto-detection
+    JSONLDParser: Concrete JSON-LD parser implementation with full JSON-LD transformation
 
-Features:
-    - Comprehensive error handling with structured exceptions
+Format Auto-Detection System:
+    detect_format_from_extension: Detect format based on file extension analysis
+    detect_format_from_content: Analyze file content to determine format when extension is ambiguous
+    get_parser_for_format: Return appropriate parser class for detected format name
+    auto_detect_parser: Main auto-detection function returning configured parser instance
+
+Progress Reporting Framework:
+    ProgressPhase: Enumeration of parsing phases for progress tracking
+    ProgressInfo: Data class containing detailed progress information
+    ProgressReporter: Thread-safe progress reporter for parser operations
+    OperationCancelledException: Exception for operation cancellation support
+
+Error Handling and Recovery:
+    ErrorSeverity: Classification of error severity levels for recovery decisions
+    RecoveryStrategy: Enumeration of available error recovery strategies
+    ErrorContext: Context information for error analysis and recovery
+
+Data and Results:
+    ParseResult: Comprehensive result object containing parsed data and metadata
+    ParserStatistics: Statistical information about parsing operations
+
+Key Features:
+    - Intelligent format auto-detection with multiple strategies (extension, content)
+    - Comprehensive error handling with structured exceptions and recovery
     - Integrated logging system with module-specific loggers
-    - Configuration management with validation
+    - Configuration management with validation and extensibility
     - Robust input validation and sanitization
-    - Metadata and statistics tracking
-    - Performance monitoring and optimization hints
+    - Metadata and statistics tracking with performance monitoring
     - Thread-safe progress reporting with cancellation support
-    - Extensible architecture for custom parsers
+    - Extensible architecture for custom parsers and formats
+    - Backwards-compatible API design maintaining existing functionality
+
+Usage Examples:
+    # Auto-detect and parse a file
+    parser = auto_detect_parser(file_path="data.owl")
+    if parser:
+        result = parser.parse("data.owl")
+
+    # Manual format detection
+    format_name = detect_format_from_extension("data.ttl")  # Returns "owl"
+    parser_class = get_parser_for_format(format_name)
+    parser = parser_class()
+
+    # Content-based detection for ambiguous extensions
+    with open("data.xml", "r") as f:
+        content = f.read()
+    format_name = detect_format_from_content(content)  # May return "owl" or other
 """
 
 import copy
@@ -93,6 +128,34 @@ except ImportError:
         return func
 
 
+# Export list for the parsers module
+__all__ = [
+    # Core abstract base class
+    "AbstractParser",
+    # Concrete parser implementations
+    "OWLParser",
+    "CSVParser",
+    "JSONLDParser",
+    # Format auto-detection functions
+    "detect_format_from_extension",
+    "detect_format_from_content",
+    "get_parser_for_format",
+    "auto_detect_parser",
+    # Progress reporting classes and enums
+    "ProgressPhase",
+    "ProgressInfo",
+    "ProgressReporter",
+    "OperationCancelledException",
+    # Error handling and recovery
+    "ErrorSeverity",
+    "RecoveryStrategy",
+    "ErrorContext",
+    # Data and result classes
+    "ParseResult",
+    "ParserStatistics",
+]
+
+
 class ErrorSeverity(Enum):
     """Classification of error severity levels for recovery decisions."""
 
@@ -114,42 +177,42 @@ class RecoveryStrategy(Enum):
 
 class ProgressPhase(Enum):
     """Enumeration of different phases in parsing operations for progress tracking."""
-    
-    INITIALIZING = "initializing"           # Setting up parser, loading configurations
-    VALIDATING = "validating"              # Input validation phase
-    PARSING = "parsing"                    # Main parsing phase
+
+    INITIALIZING = "initializing"  # Setting up parser, loading configurations
+    VALIDATING = "validating"  # Input validation phase
+    PARSING = "parsing"  # Main parsing phase
     PROCESSING_CONTENT = "processing_content"  # Content processing and transformation
-    BUILDING_ONTOLOGY = "building_ontology"   # Creating ontology structure
-    EXTRACTING_TERMS = "extracting_terms"     # Extracting terms from content
+    BUILDING_ONTOLOGY = "building_ontology"  # Creating ontology structure
+    EXTRACTING_TERMS = "extracting_terms"  # Extracting terms from content
     EXTRACTING_RELATIONSHIPS = "extracting_relationships"  # Extracting relationships
     EXTRACTING_TRIPLES = "extracting_triples"  # Extracting RDF triples
-    POST_PROCESSING = "post_processing"     # Final processing and cleanup
-    FINALIZING = "finalizing"              # Completing parsing, cleanup
-    COMPLETED = "completed"                # Operation completed successfully
-    ERROR = "error"                        # Error occurred during operation
-    CANCELLED = "cancelled"                # Operation was cancelled
+    POST_PROCESSING = "post_processing"  # Final processing and cleanup
+    FINALIZING = "finalizing"  # Completing parsing, cleanup
+    COMPLETED = "completed"  # Operation completed successfully
+    ERROR = "error"  # Error occurred during operation
+    CANCELLED = "cancelled"  # Operation was cancelled
 
 
 @dataclass
 class ProgressInfo:
     """Progress information for tracking parsing operations."""
-    
+
     phase: ProgressPhase
     current_step: int
     total_steps: int
     message: str = ""
     data_processed: int = 0  # Amount of data processed (bytes, lines, etc.)
-    total_data: int = 0      # Total amount of data to process
+    total_data: int = 0  # Total amount of data to process
     timestamp: datetime = field(default_factory=datetime.now)
     details: Dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def percentage(self) -> float:
         """Calculate progress percentage based on current step."""
         if self.total_steps == 0:
             return 0.0
         return min(100.0, (self.current_step / self.total_steps) * 100)
-    
+
     @property
     def data_percentage(self) -> float:
         """Calculate progress percentage based on data processed."""
@@ -160,29 +223,29 @@ class ProgressInfo:
 
 class ProgressReporter:
     """Thread-safe progress reporter for parser operations."""
-    
+
     def __init__(self):
         self._callbacks: List[Callable[[ProgressInfo], None]] = []
         self._lock = threading.RLock()
         self._current_progress: Optional[ProgressInfo] = None
         self._cancelled = False
-    
+
     def add_callback(self, callback: Callable[[ProgressInfo], None]) -> None:
         """Add a progress callback function."""
         with self._lock:
             self._callbacks.append(callback)
-    
+
     def remove_callback(self, callback: Callable[[ProgressInfo], None]) -> None:
         """Remove a progress callback function."""
         with self._lock:
             if callback in self._callbacks:
                 self._callbacks.remove(callback)
-    
+
     def clear_callbacks(self) -> None:
         """Clear all progress callbacks."""
         with self._lock:
             self._callbacks.clear()
-    
+
     def report_progress(self, progress_info: ProgressInfo) -> None:
         """Report progress to all registered callbacks."""
         with self._lock:
@@ -195,22 +258,22 @@ class ProgressReporter:
                     logging.getLogger(__name__).warning(
                         f"Progress callback failed: {str(e)}"
                     )
-    
+
     def get_current_progress(self) -> Optional[ProgressInfo]:
         """Get the current progress information."""
         with self._lock:
             return self._current_progress
-    
+
     def cancel(self) -> None:
         """Cancel the operation."""
         with self._lock:
             self._cancelled = True
-    
+
     def is_cancelled(self) -> bool:
         """Check if the operation has been cancelled."""
         with self._lock:
             return self._cancelled
-    
+
     def reset(self) -> None:
         """Reset the progress reporter state."""
         with self._lock:
@@ -220,7 +283,7 @@ class ProgressReporter:
 
 class OperationCancelledException(Exception):
     """Exception raised when an operation is cancelled via progress reporting."""
-    
+
     def __init__(self, message: str = "Operation was cancelled"):
         super().__init__(message)
         self.message = message
@@ -459,8 +522,8 @@ class AbstractParser(ABC):
             "log_performance": True,
             "memory_efficient": False,
             "enable_progress_reporting": False,  # Progress reporting disabled by default
-            "progress_update_interval": 0.1,     # Minimum time between progress updates (seconds)
-            "progress_detail_level": "normal",   # "minimal", "normal", "detailed"
+            "progress_update_interval": 0.1,  # Minimum time between progress updates (seconds)
+            "progress_detail_level": "normal",  # "minimal", "normal", "detailed"
         }
 
     def _register_default_validation_rules(self) -> None:
@@ -651,7 +714,7 @@ class AbstractParser(ABC):
     def set_progress_reporter(self, reporter: Optional[ProgressReporter]) -> None:
         """
         Set the progress reporter for this parser.
-        
+
         Args:
             reporter (ProgressReporter, optional): Progress reporter instance
         """
@@ -665,7 +728,7 @@ class AbstractParser(ABC):
     def get_progress_reporter(self) -> Optional[ProgressReporter]:
         """
         Get the current progress reporter.
-        
+
         Returns:
             Optional[ProgressReporter]: Current progress reporter or None
         """
@@ -675,7 +738,7 @@ class AbstractParser(ABC):
     def add_progress_callback(self, callback: Callable[[ProgressInfo], None]) -> None:
         """
         Add a progress callback function.
-        
+
         Args:
             callback (Callable[[ProgressInfo], None]): Progress callback function
         """
@@ -686,10 +749,12 @@ class AbstractParser(ABC):
                 self._progress_reporter.add_callback(callback)
             self.logger.debug("Progress callback added")
 
-    def remove_progress_callback(self, callback: Callable[[ProgressInfo], None]) -> None:
+    def remove_progress_callback(
+        self, callback: Callable[[ProgressInfo], None]
+    ) -> None:
         """
         Remove a progress callback function.
-        
+
         Args:
             callback (Callable[[ProgressInfo], None]): Progress callback function to remove
         """
@@ -710,18 +775,18 @@ class AbstractParser(ABC):
             self.logger.debug("All progress callbacks cleared")
 
     def _report_progress(
-        self, 
-        phase: ProgressPhase, 
-        current_step: int, 
-        total_steps: int, 
+        self,
+        phase: ProgressPhase,
+        current_step: int,
+        total_steps: int,
         message: str = "",
         data_processed: int = 0,
         total_data: int = 0,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Report progress to registered callbacks and hooks.
-        
+
         Args:
             phase (ProgressPhase): Current progress phase
             current_step (int): Current step number
@@ -733,12 +798,12 @@ class AbstractParser(ABC):
         """
         if not self._progress_enabled:
             return
-            
+
         with self._progress_lock:
             # Check for cancellation
             if self._progress_reporter and self._progress_reporter.is_cancelled():
                 raise OperationCancelledException()
-            
+
             # Create progress info
             progress_info = ProgressInfo(
                 phase=phase,
@@ -747,47 +812,46 @@ class AbstractParser(ABC):
                 message=message,
                 data_processed=data_processed,
                 total_data=total_data,
-                details=details or {}
+                details=details or {},
             )
-            
+
             # Report to external progress reporter
             if self._progress_reporter:
                 self._progress_reporter.report_progress(progress_info)
-            
+
             # Call local progress callbacks
             for callback in self._progress_callbacks:
                 try:
                     callback(progress_info)
                 except Exception as e:
                     self.logger.warning(f"Progress callback failed: {str(e)}")
-            
+
             # Execute progress hooks
             try:
                 self._execute_hooks("on_progress", progress_info)
-                
+
                 # Execute phase change hooks if phase changed
                 if self._current_phase != phase:
                     old_phase = self._current_phase
                     self._current_phase = phase
-                    self._execute_hooks("on_phase_change", old_phase, phase, progress_info)
-                    
+                    self._execute_hooks(
+                        "on_phase_change", old_phase, phase, progress_info
+                    )
+
             except Exception as e:
                 self.logger.warning(f"Progress hook execution failed: {str(e)}")
 
     def _check_cancellation(self) -> None:
         """
         Check if the operation has been cancelled and raise exception if so.
-        
+
         Raises:
             OperationCancelledException: If operation was cancelled
         """
         with self._progress_lock:
             if self._progress_reporter and self._progress_reporter.is_cancelled():
                 self._report_progress(
-                    ProgressPhase.CANCELLED, 
-                    0, 
-                    1, 
-                    "Operation cancelled by user request"
+                    ProgressPhase.CANCELLED, 0, 1, "Operation cancelled by user request"
                 )
                 self._execute_hooks("on_cancel")
                 raise OperationCancelledException()
@@ -795,19 +859,21 @@ class AbstractParser(ABC):
     def enable_progress_reporting(self, enable: bool = True) -> None:
         """
         Enable or disable progress reporting.
-        
+
         Args:
             enable (bool): Whether to enable progress reporting
         """
         with self._progress_lock:
             self._progress_enabled = enable
             self.options["enable_progress_reporting"] = enable
-            self.logger.debug(f"Progress reporting {'enabled' if enable else 'disabled'}")
+            self.logger.debug(
+                f"Progress reporting {'enabled' if enable else 'disabled'}"
+            )
 
     def is_progress_enabled(self) -> bool:
         """
         Check if progress reporting is enabled.
-        
+
         Returns:
             bool: True if progress reporting is enabled
         """
@@ -817,7 +883,7 @@ class AbstractParser(ABC):
     def get_current_progress(self) -> Optional[ProgressInfo]:
         """
         Get the current progress information.
-        
+
         Returns:
             Optional[ProgressInfo]: Current progress or None
         """
@@ -1811,14 +1877,18 @@ class OWLParser(AbstractParser):
                 total_steps += 1
             if self.options.get("extract_triples_on_parse", True):
                 total_steps += 1
-            
+
             self._report_progress(
-                ProgressPhase.INITIALIZING, 
-                1, total_steps,
+                ProgressPhase.INITIALIZING,
+                1,
+                total_steps,
                 "Starting OWL parsing",
                 data_processed=0,
                 total_data=len(content),
-                details={"content_size": len(content), "format": kwargs.get("format", "auto")}
+                details={
+                    "content_size": len(content),
+                    "format": kwargs.get("format", "auto"),
+                },
             )
             self._check_cancellation()
 
@@ -1827,19 +1897,25 @@ class OWLParser(AbstractParser):
             self.logger.debug(f"Parsing OWL content with format: {format_hint}")
 
             self._report_progress(
-                ProgressPhase.VALIDATING, 
-                2, total_steps,
+                ProgressPhase.VALIDATING,
+                2,
+                total_steps,
                 f"Format detected: {format_hint}",
                 data_processed=len(content),
                 total_data=len(content),
-                details={"detected_format": format_hint}
+                details={"detected_format": format_hint},
             )
             self._check_cancellation()
 
             # Validate format if strict validation is enabled
             if self.options.get("strict_validation", False):
                 if not self.validate_format(content, format_hint):
-                    self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, "Format validation failed")
+                    self._report_progress(
+                        ProgressPhase.ERROR,
+                        total_steps,
+                        total_steps,
+                        "Format validation failed",
+                    )
                     raise OntologyException(
                         f"Content validation failed for format: {format_hint}",
                         context={"format": format_hint, "content_length": len(content)},
@@ -1850,13 +1926,14 @@ class OWLParser(AbstractParser):
             rdf_graph = None
             if self._rdflib_available:
                 self._report_progress(
-                    ProgressPhase.PARSING, 
-                    current_step, total_steps,
+                    ProgressPhase.PARSING,
+                    current_step,
+                    total_steps,
                     "Parsing with RDFlib",
-                    details={"parser": "rdflib", "format": format_hint}
+                    details={"parser": "rdflib", "format": format_hint},
                 )
                 self._check_cancellation()
-                
+
                 try:
                     rdf_graph = self._parse_with_rdflib(content, format_hint)
                 except Exception as e:
@@ -1876,7 +1953,12 @@ class OWLParser(AbstractParser):
 
                     # If recovery failed and error is fatal, re-raise
                     if error_context.severity == ErrorSeverity.FATAL:
-                        self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, "RDFlib parsing failed fatally")
+                        self._report_progress(
+                            ProgressPhase.ERROR,
+                            total_steps,
+                            total_steps,
+                            "RDFlib parsing failed fatally",
+                        )
                         raise OntologyException(
                             f"RDFlib parsing failed fatally: {str(e)}"
                         )
@@ -1886,13 +1968,14 @@ class OWLParser(AbstractParser):
             owl_ontology = None
             if self._owlready2_available:
                 self._report_progress(
-                    ProgressPhase.PARSING, 
-                    current_step, total_steps,
+                    ProgressPhase.PARSING,
+                    current_step,
+                    total_steps,
                     "Parsing with owlready2",
-                    details={"parser": "owlready2", "format": format_hint}
+                    details={"parser": "owlready2", "format": format_hint},
                 )
                 self._check_cancellation()
-                
+
                 try:
                     owl_ontology = self._parse_with_owlready2(
                         content, format_hint, **kwargs
@@ -1917,7 +2000,12 @@ class OWLParser(AbstractParser):
 
                     # If recovery failed and error is fatal, re-raise
                     if error_context.severity == ErrorSeverity.FATAL:
-                        self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, "owlready2 parsing failed fatally")
+                        self._report_progress(
+                            ProgressPhase.ERROR,
+                            total_steps,
+                            total_steps,
+                            "owlready2 parsing failed fatally",
+                        )
                         raise OntologyException(
                             f"owlready2 parsing failed fatally: {str(e)}"
                         )
@@ -1925,16 +2013,17 @@ class OWLParser(AbstractParser):
             # Build structured result
             current_step = 5
             self._report_progress(
-                ProgressPhase.BUILDING_ONTOLOGY, 
-                current_step, total_steps,
+                ProgressPhase.BUILDING_ONTOLOGY,
+                current_step,
+                total_steps,
                 "Building result structure",
                 details={
-                    "has_rdf_graph": rdf_graph is not None, 
-                    "has_owl_ontology": owl_ontology is not None
-                }
+                    "has_rdf_graph": rdf_graph is not None,
+                    "has_owl_ontology": owl_ontology is not None,
+                },
             )
             self._check_cancellation()
-            
+
             result = {
                 "rdf_graph": rdf_graph,
                 "owl_ontology": owl_ontology,
@@ -1948,10 +2037,11 @@ class OWLParser(AbstractParser):
             if self.options.get("validate_on_parse", True):
                 current_step += 1
                 self._report_progress(
-                    ProgressPhase.VALIDATING, 
-                    current_step, total_steps,
+                    ProgressPhase.VALIDATING,
+                    current_step,
+                    total_steps,
                     "Running OWL validation",
-                    details={"validation_type": "comprehensive"}
+                    details={"validation_type": "comprehensive"},
                 )
                 self._check_cancellation()
                 result["validation"] = self.validate_owl(content, **kwargs)
@@ -1960,10 +2050,11 @@ class OWLParser(AbstractParser):
             if self.options.get("extract_triples_on_parse", True):
                 current_step += 1
                 self._report_progress(
-                    ProgressPhase.EXTRACTING_TRIPLES, 
-                    current_step, total_steps,
+                    ProgressPhase.EXTRACTING_TRIPLES,
+                    current_step,
+                    total_steps,
                     "Extracting RDF triples",
-                    details={"extraction_enabled": True}
+                    details={"extraction_enabled": True},
                 )
                 self._check_cancellation()
                 try:
@@ -1981,27 +2072,34 @@ class OWLParser(AbstractParser):
 
             # Finalize parsing
             self._report_progress(
-                ProgressPhase.COMPLETED, 
-                total_steps, total_steps,
+                ProgressPhase.COMPLETED,
+                total_steps,
+                total_steps,
                 "OWL parsing completed successfully",
                 data_processed=len(content),
                 total_data=len(content),
                 details={
                     "format": format_hint,
                     "validation_enabled": self.options.get("validate_on_parse", True),
-                    "triple_extraction_enabled": self.options.get("extract_triples_on_parse", True),
-                    "triple_count": result.get("triple_count", 0)
-                }
+                    "triple_extraction_enabled": self.options.get(
+                        "extract_triples_on_parse", True
+                    ),
+                    "triple_count": result.get("triple_count", 0),
+                },
             )
 
             return result
 
         except Exception as e:
             self._report_progress(
-                ProgressPhase.ERROR, 
-                total_steps, total_steps,
+                ProgressPhase.ERROR,
+                total_steps,
+                total_steps,
                 f"OWL parsing failed: {str(e)}",
-                details={"error_type": type(e).__name__, "format": kwargs.get("format", "auto")}
+                details={
+                    "error_type": type(e).__name__,
+                    "format": kwargs.get("format", "auto"),
+                },
             )
             raise OntologyException(
                 f"OWL parsing failed: {str(e)}",
@@ -2124,25 +2222,29 @@ class OWLParser(AbstractParser):
         """
         # Initialize progress reporting for file parsing
         total_steps = 4  # Validation, format detection, file reading, parsing
-        
+
         self._report_progress(
-            ProgressPhase.INITIALIZING, 
-            1, total_steps,
+            ProgressPhase.INITIALIZING,
+            1,
+            total_steps,
             "Starting file parsing",
-            details={"file_path": str(file_path)}
+            details={"file_path": str(file_path)},
         )
         self._check_cancellation()
 
         file_path = Path(file_path)
         if not file_path.exists():
-            self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, "File not found")
+            self._report_progress(
+                ProgressPhase.ERROR, total_steps, total_steps, "File not found"
+            )
             raise ValidationException(f"File not found: {file_path}")
 
         self._report_progress(
-            ProgressPhase.VALIDATING, 
-            2, total_steps,
+            ProgressPhase.VALIDATING,
+            2,
+            total_steps,
             "File validation successful",
-            details={"file_size": file_path.stat().st_size}
+            details={"file_size": file_path.stat().st_size},
         )
         self._check_cancellation()
 
@@ -2155,10 +2257,11 @@ class OWLParser(AbstractParser):
         # Read and parse file content
         try:
             self._report_progress(
-                ProgressPhase.PROCESSING_CONTENT, 
-                3, total_steps,
+                ProgressPhase.PROCESSING_CONTENT,
+                3,
+                total_steps,
                 "Reading file content",
-                details={"encoding": self.options.get("encoding", "utf-8")}
+                details={"encoding": self.options.get("encoding", "utf-8")},
             )
             self._check_cancellation()
 
@@ -2167,23 +2270,29 @@ class OWLParser(AbstractParser):
                 content = f.read()
 
             self._report_progress(
-                ProgressPhase.PARSING, 
-                4, total_steps,
+                ProgressPhase.PARSING,
+                4,
+                total_steps,
                 "Parsing file content",
                 data_processed=len(content),
                 total_data=len(content),
-                details={"content_size": len(content)}
+                details={"content_size": len(content)},
             )
             self._check_cancellation()
 
             kwargs["source_file"] = str(file_path)
             result = self.parse(content, **kwargs)
-            
+
             # The parse() method will handle its own progress reporting to completion
             return result
 
         except Exception as e:
-            self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, f"File parsing failed: {str(e)}")
+            self._report_progress(
+                ProgressPhase.ERROR,
+                total_steps,
+                total_steps,
+                f"File parsing failed: {str(e)}",
+            )
             raise OntologyException(
                 f"Failed to parse OWL file {file_path}: {str(e)}",
                 context={"file_path": str(file_path)},
@@ -2216,12 +2325,13 @@ class OWLParser(AbstractParser):
         """
         # Initialize progress reporting for URL parsing
         total_steps = 4  # URL validation, fetching, content processing, parsing
-        
+
         self._report_progress(
-            ProgressPhase.INITIALIZING, 
-            1, total_steps,
+            ProgressPhase.INITIALIZING,
+            1,
+            total_steps,
             "Starting URL parsing",
-            details={"url": url}
+            details={"url": url},
         )
         self._check_cancellation()
 
@@ -2232,26 +2342,30 @@ class OWLParser(AbstractParser):
 
             # Validate URL scheme for security
             self._report_progress(
-                ProgressPhase.VALIDATING, 
-                2, total_steps,
+                ProgressPhase.VALIDATING,
+                2,
+                total_steps,
                 "Validating URL",
-                details={"url": url}
+                details={"url": url},
             )
             self._check_cancellation()
 
             parsed_url = urlparse(url)
             if parsed_url.scheme not in ("http", "https"):
-                self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, "Invalid URL scheme")
+                self._report_progress(
+                    ProgressPhase.ERROR, total_steps, total_steps, "Invalid URL scheme"
+                )
                 raise OntologyException(
                     f"Unsupported URL scheme: {parsed_url.scheme}. Only http and https are allowed.",
                     context={"url": url, "scheme": parsed_url.scheme},
                 )
 
             self._report_progress(
-                ProgressPhase.PROCESSING_CONTENT, 
-                3, total_steps,
+                ProgressPhase.PROCESSING_CONTENT,
+                3,
+                total_steps,
                 "Fetching content from URL",
-                details={"timeout": self.options.get("timeout_seconds", 300)}
+                details={"timeout": self.options.get("timeout_seconds", 300)},
             )
             self._check_cancellation()
 
@@ -2261,28 +2375,39 @@ class OWLParser(AbstractParser):
                 content = response.read().decode("utf-8")
 
             self._report_progress(
-                ProgressPhase.PARSING, 
-                4, total_steps,
+                ProgressPhase.PARSING,
+                4,
+                total_steps,
                 "Parsing URL content",
                 data_processed=len(content),
                 total_data=len(content),
-                details={"content_size": len(content)}
+                details={"content_size": len(content)},
             )
             self._check_cancellation()
 
             kwargs["source_url"] = url
             result = self.parse(content, **kwargs)
-            
+
             # The parse() method will handle its own progress reporting to completion
             return result
 
         except urllib.error.URLError as e:
-            self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, f"URL fetch failed: {str(e)}")
+            self._report_progress(
+                ProgressPhase.ERROR,
+                total_steps,
+                total_steps,
+                f"URL fetch failed: {str(e)}",
+            )
             raise OntologyException(
                 f"Failed to fetch OWL from URL {url}: {str(e)}", context={"url": url}
             )
         except Exception as e:
-            self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, f"URL parsing failed: {str(e)}")
+            self._report_progress(
+                ProgressPhase.ERROR,
+                total_steps,
+                total_steps,
+                f"URL parsing failed: {str(e)}",
+            )
             raise OntologyException(
                 f"Failed to parse OWL from URL {url}: {str(e)}", context={"url": url}
             )
@@ -2299,21 +2424,23 @@ class OWLParser(AbstractParser):
         """
         # Initialize progress reporting for stream parsing
         total_steps = 3  # Stream reading, content processing, parsing
-        
+
         self._report_progress(
-            ProgressPhase.INITIALIZING, 
-            1, total_steps,
+            ProgressPhase.INITIALIZING,
+            1,
+            total_steps,
             "Starting stream parsing",
-            details={"source_type": "stream"}
+            details={"source_type": "stream"},
         )
         self._check_cancellation()
 
         try:
             self._report_progress(
-                ProgressPhase.PROCESSING_CONTENT, 
-                2, total_steps,
+                ProgressPhase.PROCESSING_CONTENT,
+                2,
+                total_steps,
                 "Reading stream content",
-                details={"encoding": self.options.get("encoding", "utf-8")}
+                details={"encoding": self.options.get("encoding", "utf-8")},
             )
             self._check_cancellation()
 
@@ -2323,23 +2450,29 @@ class OWLParser(AbstractParser):
                 content = content.decode(encoding)
 
             self._report_progress(
-                ProgressPhase.PARSING, 
-                3, total_steps,
+                ProgressPhase.PARSING,
+                3,
+                total_steps,
                 "Parsing stream content",
                 data_processed=len(content),
                 total_data=len(content),
-                details={"content_size": len(content)}
+                details={"content_size": len(content)},
             )
             self._check_cancellation()
 
             kwargs["source_type"] = "stream"
             result = self.parse(content, **kwargs)
-            
+
             # The parse() method will handle its own progress reporting to completion
             return result
 
         except Exception as e:
-            self._report_progress(ProgressPhase.ERROR, total_steps, total_steps, f"Stream parsing failed: {str(e)}")
+            self._report_progress(
+                ProgressPhase.ERROR,
+                total_steps,
+                total_steps,
+                f"Stream parsing failed: {str(e)}",
+            )
             raise OntologyException(f"Failed to parse OWL from stream: {str(e)}")
 
     def validate(self, content: str, **kwargs) -> bool:
@@ -2400,10 +2533,12 @@ class OWLParser(AbstractParser):
             Dict[str, Any]: Detailed validation results
         """
         # Estimate validation steps
-        validation_steps = 6  # Basic: format, parse, statistics, consistency, profile, namespace
+        validation_steps = (
+            6  # Basic: format, parse, statistics, consistency, profile, namespace
+        )
         if self.options.get("consistency_check", False):
             validation_steps += 1
-        
+
         result = {
             "is_valid": False,
             "format": "unknown",
@@ -2436,7 +2571,7 @@ class OWLParser(AbstractParser):
             # Instead, try basic RDF/OWL parsing directly
             parsed_data = None
             parse_success = False
-            
+
             if self._rdflib_available:
                 try:
                     rdf_graph = self._parse_with_rdflib(content, detected_format)
@@ -2445,16 +2580,21 @@ class OWLParser(AbstractParser):
                     result["is_valid"] = True
                 except Exception as e:
                     result["errors"].append(f"RDFlib parsing failed: {str(e)}")
-            
+
             if not parse_success and self._owlready2_available:
                 try:
-                    owl_ontology = self._parse_with_owlready2(content, detected_format, **kwargs)
-                    parsed_data = {"owl_ontology": owl_ontology, "format": detected_format}
+                    owl_ontology = self._parse_with_owlready2(
+                        content, detected_format, **kwargs
+                    )
+                    parsed_data = {
+                        "owl_ontology": owl_ontology,
+                        "format": detected_format,
+                    }
                     parse_success = True
                     result["is_valid"] = True
                 except Exception as e:
                     result["errors"].append(f"owlready2 parsing failed: {str(e)}")
-            
+
             if not parse_success:
                 result["errors"].append("Both RDFlib and owlready2 parsing failed")
                 return result
@@ -3782,11 +3922,11 @@ class CSVParser(AbstractParser):
 
         start_time = time.time()
         result = ParseResult(success=False)
-        
+
         # Calculate total data size for progress tracking
         total_data_size = len(content)
-        content_lines = content.count('\n') + 1
-        
+        content_lines = content.count("\n") + 1
+
         # Estimate total steps for progress reporting
         total_steps = 8  # initialization, validation, dialect detection, header detection, parsing, type inference, building result, finalization
         current_step = 0
@@ -3800,12 +3940,15 @@ class CSVParser(AbstractParser):
                 "Initializing CSV parsing",
                 data_processed=0,
                 total_data=total_data_size,
-                details={"content_size": total_data_size, "estimated_lines": content_lines}
+                details={
+                    "content_size": total_data_size,
+                    "estimated_lines": content_lines,
+                },
             )
-            
+
             # Check for cancellation
             self._check_cancellation()
-            
+
             # Execute pre-parse hooks
             self._execute_hooks("pre_parse", content, **kwargs)
 
@@ -3817,11 +3960,11 @@ class CSVParser(AbstractParser):
                     total_steps,
                     "Validating CSV structure and content",
                     data_processed=total_data_size // 4,  # Validation samples content
-                    total_data=total_data_size
+                    total_data=total_data_size,
                 )
-                
+
                 self._check_cancellation()
-                
+
                 self._validation_errors = []
                 validation_result = self.validate_csv(content, **kwargs)
                 if not validation_result.get("valid_structure", False):
@@ -3833,7 +3976,7 @@ class CSVParser(AbstractParser):
                             current_step,
                             total_steps,
                             "Validation failed",
-                            details={"validation_errors": len(result.errors)}
+                            details={"validation_errors": len(result.errors)},
                         )
                         return result
 
@@ -3844,11 +3987,11 @@ class CSVParser(AbstractParser):
                 total_steps,
                 "Detecting CSV format and dialect",
                 data_processed=total_data_size // 2,
-                total_data=total_data_size
+                total_data=total_data_size,
             )
-            
+
             self._check_cancellation()
-            
+
             detected_format = self.detect_format(content)
             dialect_result = self.detect_dialect(content)
             dialect = dialect_result["dialect"]
@@ -3868,11 +4011,11 @@ class CSVParser(AbstractParser):
                 total_steps,
                 "Detecting CSV headers",
                 data_processed=total_data_size // 2,
-                total_data=total_data_size
+                total_data=total_data_size,
             )
-            
+
             self._check_cancellation()
-            
+
             has_headers = self.options.get("has_headers")
             if has_headers is None:
                 has_headers = self.detect_headers(content)
@@ -3884,11 +4027,11 @@ class CSVParser(AbstractParser):
                 total_steps,
                 "Processing CSV content",
                 data_processed=total_data_size * 3 // 4,
-                total_data=total_data_size
+                total_data=total_data_size,
             )
-            
+
             self._check_cancellation()
-            
+
             parsed_data = self._parse_csv_content(
                 content, dialect, has_headers, **kwargs
             )
@@ -3901,11 +4044,11 @@ class CSVParser(AbstractParser):
                     total_steps,
                     "Inferring column data types",
                     data_processed=total_data_size * 7 // 8,
-                    total_data=total_data_size
+                    total_data=total_data_size,
                 )
-                
+
                 self._check_cancellation()
-                
+
                 self._column_types = self.infer_column_types(content)
 
             # Build result
@@ -3915,11 +4058,11 @@ class CSVParser(AbstractParser):
                 total_steps,
                 "Building parse result",
                 data_processed=total_data_size,
-                total_data=total_data_size
+                total_data=total_data_size,
             )
-            
+
             self._check_cancellation()
-            
+
             result.success = True
             result.data = parsed_data
             result.metadata = {
@@ -3955,26 +4098,26 @@ class CSVParser(AbstractParser):
                 details={
                     "rows_processed": len(parsed_data.get("rows", [])),
                     "columns_found": len(parsed_data.get("headers", [])),
-                    "format_detected": detected_format
-                }
+                    "format_detected": detected_format,
+                },
             )
-            
+
             # Execute post-parse hooks
             self._execute_hooks("post_parse", result)
 
         except Exception as e:
             self.logger.error(f"Parse error: {str(e)}")
             result.errors.append(str(e))
-            
+
             # Report error
             self._report_progress(
                 ProgressPhase.ERROR,
                 current_step,
                 total_steps,
                 f"CSV parsing failed: {str(e)}",
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
-            
+
             self._execute_hooks("on_error", e)
 
         finally:
@@ -3991,14 +4134,16 @@ class CSVParser(AbstractParser):
         """Internal method to parse CSV content."""
         rows = []
         headers = []
-        
+
         # Estimate total rows for progress tracking
-        estimated_rows = content.count('\n') + 1
+        estimated_rows = content.count("\n") + 1
         if has_headers:
             estimated_rows -= 1  # Subtract header row
-            
+
         processed_rows = 0
-        progress_update_interval = max(1, estimated_rows // 20)  # Update every 5% of rows
+        progress_update_interval = max(
+            1, estimated_rows // 20
+        )  # Update every 5% of rows
 
         # Create CSV reader
         csv_input = self._io.StringIO(content)
@@ -4042,7 +4187,7 @@ class CSVParser(AbstractParser):
         # Read data rows
         nrows = self.options.get("nrows")
         row_count = 0
-        
+
         # Report start of row processing
         self._report_progress(
             ProgressPhase.PROCESSING_CONTENT,
@@ -4051,20 +4196,24 @@ class CSVParser(AbstractParser):
             "Processing CSV rows",
             data_processed=0,
             total_data=estimated_rows,
-            details={"estimated_rows": estimated_rows, "has_headers": has_headers}
+            details={"estimated_rows": estimated_rows, "has_headers": has_headers},
         )
 
         for row in reader:
             if nrows and row_count >= nrows:
                 break
-                
+
             # Check for cancellation periodically
             if row_count % 100 == 0:  # Check every 100 rows
                 self._check_cancellation()
-                
+
             # Update progress periodically to avoid overhead
             if row_count % progress_update_interval == 0 or row_count == 0:
-                progress_percentage = min(100, (row_count / estimated_rows) * 100) if estimated_rows > 0 else 0
+                progress_percentage = (
+                    min(100, (row_count / estimated_rows) * 100)
+                    if estimated_rows > 0
+                    else 0
+                )
                 self._report_progress(
                     ProgressPhase.PROCESSING_CONTENT,
                     row_count,
@@ -4072,7 +4221,10 @@ class CSVParser(AbstractParser):
                     f"Processing row {row_count + 1} of ~{estimated_rows}",
                     data_processed=row_count,
                     total_data=estimated_rows,
-                    details={"current_row": row_count + 1, "progress_pct": f"{progress_percentage:.1f}%"}
+                    details={
+                        "current_row": row_count + 1,
+                        "progress_pct": f"{progress_percentage:.1f}%",
+                    },
                 )
 
             # Handle bad lines with comprehensive error recovery
@@ -4117,7 +4269,7 @@ class CSVParser(AbstractParser):
             rows.append(row)
             row_count += 1
             processed_rows = row_count
-        
+
         # Report completion of row processing
         self._report_progress(
             ProgressPhase.PROCESSING_CONTENT,
@@ -4126,7 +4278,7 @@ class CSVParser(AbstractParser):
             f"Completed processing {processed_rows} rows",
             data_processed=processed_rows,
             total_data=max(processed_rows, estimated_rows),
-            details={"rows_processed": processed_rows, "headers_count": len(headers)}
+            details={"rows_processed": processed_rows, "headers_count": len(headers)},
         )
 
         return {
@@ -4156,7 +4308,7 @@ class CSVParser(AbstractParser):
 
         # Check for cancellation before processing
         self._check_cancellation()
-        
+
         # Sample first few lines for analysis
         lines = content.split("\n")[:10]
         sample = "\n".join(lines)
@@ -4202,63 +4354,63 @@ class CSVParser(AbstractParser):
         """
         if not content:
             return self._create_dialect_result(None, 0.0, "fallback", "Empty content")
-            
+
         # Report start of dialect detection
         self._report_progress(
             ProgressPhase.PARSING,
-            1, 4,
+            1,
+            4,
             "Starting CSV dialect detection",
-            details={"content_size": len(content)}
+            details={"content_size": len(content)},
         )
 
         # Check for cancellation before processing
         self._check_cancellation()
-        
+
         # Enhanced sample size for better detection
         sample_size = min(8192, len(content))  # Increased from 1024
         sample = content[:sample_size]
 
         # Try csv.Sniffer first with enhanced delimiters
         self._report_progress(
-            ProgressPhase.PARSING,
-            2, 4,
-            "Trying CSV Sniffer for dialect detection"
+            ProgressPhase.PARSING, 2, 4, "Trying CSV Sniffer for dialect detection"
         )
-        
+
         sniffer_result = self._try_csv_sniffer(sample)
         if sniffer_result["confidence"] > 0.6:  # High confidence threshold
             self._report_progress(
                 ProgressPhase.PARSING,
-                4, 4,
+                4,
+                4,
                 f"Dialect detected via Sniffer (confidence: {sniffer_result['confidence']:.2f})",
-                details={"method": "sniffer", "confidence": sniffer_result["confidence"]}
+                details={
+                    "method": "sniffer",
+                    "confidence": sniffer_result["confidence"],
+                },
             )
             return sniffer_result
 
         # Manual pattern analysis for difficult cases
         self._report_progress(
-            ProgressPhase.PARSING,
-            3, 4,
-            "Performing manual dialect detection"
+            ProgressPhase.PARSING, 3, 4, "Performing manual dialect detection"
         )
-        
+
         manual_result = self._manual_dialect_detection(sample)
         if manual_result["confidence"] > 0.4:  # Medium confidence threshold
             self._report_progress(
                 ProgressPhase.PARSING,
-                4, 4,
+                4,
+                4,
                 f"Dialect detected via manual analysis (confidence: {manual_result['confidence']:.2f})",
-                details={"method": "manual", "confidence": manual_result["confidence"]}
+                details={"method": "manual", "confidence": manual_result["confidence"]},
             )
             return manual_result
 
         # Robust fallback mechanism
         self._report_progress(
-            ProgressPhase.PARSING,
-            4, 4,
-            "Using fallback dialect detection"
+            ProgressPhase.PARSING, 4, 4, "Using fallback dialect detection"
         )
-        
+
         fallback_result = self._fallback_dialect_detection(sample)
 
         # Log the detection process
@@ -4267,16 +4419,17 @@ class CSVParser(AbstractParser):
             f"confidence={fallback_result['confidence']:.2f}, "
             f"delimiter='{fallback_result['dialect'].delimiter}'"
         )
-        
+
         self._report_progress(
             ProgressPhase.PARSING,
-            4, 4,
+            4,
+            4,
             f"Dialect detection completed via {fallback_result['method']}",
             details={
                 "method": fallback_result["method"],
                 "confidence": fallback_result["confidence"],
-                "delimiter": fallback_result["dialect"].delimiter
-            }
+                "delimiter": fallback_result["dialect"].delimiter,
+            },
         )
 
         return fallback_result
@@ -4417,7 +4570,7 @@ class CSVParser(AbstractParser):
                 self.skipinitialspace = False
                 self.doublequote = True
                 self.quoting = csv.QUOTE_MINIMAL
-                self.lineterminator = '\r\n'  # Standard line terminator
+                self.lineterminator = "\r\n"  # Standard line terminator
 
         dialect = ManualDialect(best_delimiter, best_quote, escape_char)
 
@@ -4474,7 +4627,7 @@ class CSVParser(AbstractParser):
                 self.skipinitialspace = False
                 self.doublequote = True
                 self.quoting = csv.QUOTE_MINIMAL
-                self.lineterminator = '\r\n'  # Standard line terminator
+                self.lineterminator = "\r\n"  # Standard line terminator
 
         dialect = FallbackDialect(delimiter, self.options)
 
@@ -4642,7 +4795,7 @@ class CSVParser(AbstractParser):
         try:
             # Check for cancellation before starting
             self._check_cancellation()
-            
+
             # Parse a sample of the data
             parsed = self._parse_csv_content(
                 content, self._detected_dialect, self.detect_headers(content)
@@ -5078,7 +5231,7 @@ class CSVParser(AbstractParser):
             "missing_columns": [],
             "extra_columns": [],
         }
-        
+
         # Total validation steps for progress tracking
         total_validation_steps = 6  # structure, headers, columns, data types, field formats, final validation
         current_step = 0
@@ -5090,7 +5243,7 @@ class CSVParser(AbstractParser):
                 current_step := current_step + 1,
                 total_validation_steps,
                 "Starting CSV validation",
-                details={"content_size": len(content)}
+                details={"content_size": len(content)},
             )
             # Basic structure validation
             if not content or not content.strip():
@@ -5099,10 +5252,10 @@ class CSVParser(AbstractParser):
                     ProgressPhase.ERROR,
                     current_step,
                     total_validation_steps,
-                    "Validation failed - empty content"
+                    "Validation failed - empty content",
                 )
                 return validation_result
-                
+
             self._check_cancellation()
 
             # Try to parse structure
@@ -5110,9 +5263,9 @@ class CSVParser(AbstractParser):
                 ProgressPhase.VALIDATING,
                 current_step := current_step + 1,
                 total_validation_steps,
-                "Validating CSV structure and headers"
+                "Validating CSV structure and headers",
             )
-            
+
             try:
                 dialect_result = self.detect_dialect(content)
                 dialect = dialect_result["dialect"]
@@ -5128,7 +5281,7 @@ class CSVParser(AbstractParser):
                         ProgressPhase.ERROR,
                         current_step,
                         total_validation_steps,
-                        "Validation failed - no headers found"
+                        "Validation failed - no headers found",
                     )
                     return validation_result
 
@@ -5140,10 +5293,10 @@ class CSVParser(AbstractParser):
                     ProgressPhase.ERROR,
                     current_step,
                     total_validation_steps,
-                    f"Validation failed - structure parsing error: {str(e)}"
+                    f"Validation failed - structure parsing error: {str(e)}",
                 )
                 return validation_result
-                
+
             self._check_cancellation()
 
             # Check required columns
@@ -5152,11 +5305,11 @@ class CSVParser(AbstractParser):
                 current_step := current_step + 1,
                 total_validation_steps,
                 "Validating required columns",
-                details={"headers_found": len(headers)}
+                details={"headers_found": len(headers)},
             )
-            
+
             self._check_cancellation()
-            
+
             required_columns = validation_result["required_columns"]
             missing_columns = []
 
@@ -5181,11 +5334,11 @@ class CSVParser(AbstractParser):
                 ProgressPhase.VALIDATING,
                 current_step := current_step + 1,
                 total_validation_steps,
-                "Validating data types and formats"
+                "Validating data types and formats",
             )
-            
+
             self._check_cancellation()
-            
+
             try:
                 parsed_sample = self._parse_csv_content(
                     content[:5000], dialect, True
@@ -5203,11 +5356,11 @@ class CSVParser(AbstractParser):
                         current_step := current_step + 1,
                         total_validation_steps,
                         "Validating field formats",
-                        details={"sample_rows": len(rows)}
+                        details={"sample_rows": len(rows)},
                     )
-                    
+
                     self._check_cancellation()
-                    
+
                     id_col = self._find_column(headers, ["id", "term_id"])
                     name_col = self._find_column(headers, ["name", "label"])
 
@@ -5248,27 +5401,29 @@ class CSVParser(AbstractParser):
                 ProgressPhase.VALIDATING,
                 current_step := current_step + 1,
                 total_validation_steps,
-                "Finalizing validation results"
+                "Finalizing validation results",
             )
-            
+
             validation_result["valid_structure"] = (
                 validation_result["valid_headers"]
                 and validation_result["required_columns_present"]
                 and len(validation_result["errors"]) == 0
             )
-            
+
             # Report validation completion
             status = "passed" if validation_result["valid_structure"] else "failed"
             self._report_progress(
-                ProgressPhase.COMPLETED if validation_result["valid_structure"] else ProgressPhase.ERROR,
+                ProgressPhase.COMPLETED
+                if validation_result["valid_structure"]
+                else ProgressPhase.ERROR,
                 total_validation_steps,
                 total_validation_steps,
                 f"CSV validation {status}",
                 details={
                     "validation_status": status,
                     "errors_count": len(validation_result["errors"]),
-                    "warnings_count": len(validation_result["warnings"])
-                }
+                    "warnings_count": len(validation_result["warnings"]),
+                },
             )
 
         except Exception as e:
@@ -5278,7 +5433,7 @@ class CSVParser(AbstractParser):
                 current_step,
                 total_validation_steps,
                 f"Validation error: {str(e)}",
-                details={"error_type": type(e).__name__}
+                details={"error_type": type(e).__name__},
             )
 
         return validation_result
@@ -5744,15 +5899,19 @@ class JSONLDParser(AbstractParser):
             self.statistics.total_parses += 1
             start_time = time.time()
             content_length = len(content)
-            
+
             # Report initialization phase
             self._report_progress(
                 ProgressPhase.INITIALIZING,
-                1, 8,
+                1,
+                8,
                 "Initializing JSON-LD parser",
                 data_processed=0,
                 total_data=content_length,
-                details={"content_length": content_length, "safe_mode": self.options.get("safe_mode", True)}
+                details={
+                    "content_length": content_length,
+                    "safe_mode": self.options.get("safe_mode", True),
+                },
             )
             self._check_cancellation()
 
@@ -5763,10 +5922,11 @@ class JSONLDParser(AbstractParser):
             if self.options.get("safe_mode", True):
                 self._report_progress(
                     ProgressPhase.VALIDATING,
-                    2, 8,
+                    2,
+                    8,
                     "Applying security protections",
                     data_processed=0,
-                    total_data=content_length
+                    total_data=content_length,
                 )
                 self._check_cancellation()
                 self._validate_content_security(content)
@@ -5774,13 +5934,14 @@ class JSONLDParser(AbstractParser):
             # Detect format if not specified
             self._report_progress(
                 ProgressPhase.PARSING,
-                3, 8,
+                3,
+                8,
                 f"Detecting format and preparing to parse",
                 data_processed=0,
-                total_data=content_length
+                total_data=content_length,
             )
             self._check_cancellation()
-            
+
             format_hint = kwargs.get("format", self.detect_format(content))
             self.logger.debug(f"Parsing JSON-LD content with format: {format_hint}")
 
@@ -5788,14 +5949,15 @@ class JSONLDParser(AbstractParser):
             if self.options.get("strict_validation", False):
                 self._report_progress(
                     ProgressPhase.VALIDATING,
-                    3, 8,
+                    3,
+                    8,
                     f"Performing strict validation for format: {format_hint}",
                     data_processed=0,
                     total_data=content_length,
-                    details={"format": format_hint}
+                    details={"format": format_hint},
                 )
                 self._check_cancellation()
-                
+
                 if not self.validate(content, **kwargs):
                     raise OntologyException(
                         f"Content validation failed for format: {format_hint}",
@@ -5805,14 +5967,15 @@ class JSONLDParser(AbstractParser):
             # Parse JSON first with security protections
             self._report_progress(
                 ProgressPhase.PARSING,
-                4, 8,
+                4,
+                8,
                 "Parsing JSON content with security protections",
                 data_processed=content_length // 4,
                 total_data=content_length,
-                details={"parsing_stage": "json_decode"}
+                details={"parsing_stage": "json_decode"},
             )
             self._check_cancellation()
-            
+
             data = None
             try:
                 # Use secure JSON parsing with depth limits
@@ -5844,28 +6007,33 @@ class JSONLDParser(AbstractParser):
             # Process JSON-LD data
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                5, 8,
+                5,
+                8,
                 "Processing JSON-LD data structure",
                 data_processed=content_length // 2,
                 total_data=content_length,
-                details={"pyld_available": self._pyld_available, "data_type": type(data).__name__}
+                details={
+                    "pyld_available": self._pyld_available,
+                    "data_type": type(data).__name__,
+                },
             )
             self._check_cancellation()
-            
+
             processed_data = data
 
             # Try to expand with pyld if available
             if self._pyld_available:
                 self._report_progress(
                     ProgressPhase.PROCESSING_CONTENT,
-                    6, 8,
+                    6,
+                    8,
                     "Expanding JSON-LD document with pyld",
                     data_processed=content_length * 2 // 3,
                     total_data=content_length,
-                    details={"expansion_stage": "jsonld_expand"}
+                    details={"expansion_stage": "jsonld_expand"},
                 )
                 self._check_cancellation()
-                
+
                 try:
                     # Expand the document to normalize it
                     processed_data = self.expand(data, **kwargs)
@@ -5895,14 +6063,15 @@ class JSONLDParser(AbstractParser):
             if kwargs.get("convert_to_ontology", True):
                 self._report_progress(
                     ProgressPhase.BUILDING_ONTOLOGY,
-                    7, 8,
+                    7,
+                    8,
                     "Converting JSON-LD to ontology format",
                     data_processed=content_length * 3 // 4,
                     total_data=content_length,
-                    details={"conversion_stage": "ontology_convert"}
+                    details={"conversion_stage": "ontology_convert"},
                 )
                 self._check_cancellation()
-                
+
                 try:
                     ontology_data = self.to_ontology(processed_data, **kwargs)
                     if ontology_data:
@@ -5919,17 +6088,18 @@ class JSONLDParser(AbstractParser):
                         # Report successful completion
                         self._report_progress(
                             ProgressPhase.COMPLETED,
-                            8, 8,
+                            8,
+                            8,
                             "JSON-LD parsing completed successfully",
                             data_processed=content_length,
                             total_data=content_length,
                             details={
                                 "parse_time": parse_time,
                                 "ontology_converted": True,
-                                "processed_data_type": type(processed_data).__name__
-                            }
+                                "processed_data_type": type(processed_data).__name__,
+                            },
                         )
-                        
+
                         return ontology_data
                     else:
                         self.logger.warning(
@@ -5971,32 +6141,36 @@ class JSONLDParser(AbstractParser):
             # Report successful completion (without ontology conversion)
             self._report_progress(
                 ProgressPhase.COMPLETED,
-                8, 8,
+                8,
+                8,
                 "JSON-LD parsing completed (raw data returned)",
                 data_processed=content_length,
                 total_data=content_length,
                 details={
                     "parse_time": parse_time,
                     "ontology_converted": False,
-                    "processed_data_type": type(processed_data).__name__
-                }
+                    "processed_data_type": type(processed_data).__name__,
+                },
             )
 
             return processed_data
 
         except Exception as e:
             self.statistics.failed_parses += 1
-            
+
             # Report error phase
             self._report_progress(
                 ProgressPhase.ERROR,
-                0, 8,
+                0,
+                8,
                 f"JSON-LD parsing failed: {str(e)}",
                 data_processed=0,
-                total_data=len(content) if 'content_length' not in locals() else content_length,
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                total_data=len(content)
+                if "content_length" not in locals()
+                else content_length,
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
-            
+
             if isinstance(e, OntologyException):
                 raise
             raise OntologyException(f"JSON-LD parsing failed: {str(e)}")
@@ -6013,65 +6187,73 @@ class JSONLDParser(AbstractParser):
         """
         try:
             content_length = len(content)
-            
+
             # Report validation initialization
             self._report_progress(
                 ProgressPhase.VALIDATING,
-                1, 4,
+                1,
+                4,
                 "Starting JSON-LD validation",
                 data_processed=0,
                 total_data=content_length,
-                details={"validation_stage": "initialization"}
+                details={"validation_stage": "initialization"},
             )
             self._check_cancellation()
-            
+
             self._validation_errors = []
 
             # Basic JSON validation
             self._report_progress(
                 ProgressPhase.VALIDATING,
-                2, 4,
+                2,
+                4,
                 "Validating JSON syntax",
                 data_processed=content_length // 4,
                 total_data=content_length,
-                details={"validation_stage": "json_syntax"}
+                details={"validation_stage": "json_syntax"},
             )
             self._check_cancellation()
-            
+
             try:
                 data = self._json.loads(content)
             except self._json.JSONDecodeError as e:
                 self._validation_errors.append(f"Invalid JSON: {str(e)}")
                 self._report_progress(
                     ProgressPhase.ERROR,
-                    0, 4,
+                    0,
+                    4,
                     f"JSON validation failed: {str(e)}",
                     data_processed=0,
                     total_data=content_length,
-                    details={"error_type": "json_decode_error"}
+                    details={"error_type": "json_decode_error"},
                 )
                 return False
 
             # JSON-LD specific validation
             self._report_progress(
                 ProgressPhase.VALIDATING,
-                3, 4,
+                3,
+                4,
                 "Validating JSON-LD structure",
                 data_processed=content_length // 2,
                 total_data=content_length,
-                details={"validation_stage": "jsonld_structure", "data_type": type(data).__name__}
+                details={
+                    "validation_stage": "jsonld_structure",
+                    "data_type": type(data).__name__,
+                },
             )
             self._check_cancellation()
-            
+
             if not self._is_valid_jsonld_structure(data):
                 self._validation_errors.append("Not a valid JSON-LD structure")
                 self._report_progress(
                     ProgressPhase.ERROR,
-                    0, 4,
+                    0,
+                    4,
                     "JSON-LD structure validation failed",
                     data_processed=content_length // 2,
                     total_data=content_length,
-                    details={"error_type": "invalid_jsonld_structure"}
+                    details={"error_type": "invalid_jsonld_structure"},
                 )
                 return False
 
@@ -6079,14 +6261,18 @@ class JSONLDParser(AbstractParser):
             if self._pyld_available and self.options.get("strict_validation", False):
                 self._report_progress(
                     ProgressPhase.VALIDATING,
-                    4, 4,
+                    4,
+                    4,
                     "Performing advanced JSON-LD validation with pyld",
                     data_processed=content_length * 3 // 4,
                     total_data=content_length,
-                    details={"validation_stage": "pyld_expansion", "strict_validation": True}
+                    details={
+                        "validation_stage": "pyld_expansion",
+                        "strict_validation": True,
+                    },
                 )
                 self._check_cancellation()
-                
+
                 try:
                     # Try to expand the document to validate JSON-LD semantics
                     self._jsonld.expand(data)
@@ -6096,11 +6282,12 @@ class JSONLDParser(AbstractParser):
                     )
                     self._report_progress(
                         ProgressPhase.ERROR,
-                        0, 4,
+                        0,
+                        4,
                         f"JSON-LD expansion validation failed: {str(e)}",
                         data_processed=content_length * 3 // 4,
                         total_data=content_length,
-                        details={"error_type": "jsonld_expansion_error"}
+                        details={"error_type": "jsonld_expansion_error"},
                     )
                     return False
 
@@ -6109,41 +6296,47 @@ class JSONLDParser(AbstractParser):
             if validation_successful:
                 self._report_progress(
                     ProgressPhase.COMPLETED,
-                    4, 4,
+                    4,
+                    4,
                     "JSON-LD validation completed successfully",
                     data_processed=content_length,
                     total_data=content_length,
                     details={
                         "validation_successful": True,
                         "errors_count": 0,
-                        "pyld_validation": self._pyld_available and self.options.get("strict_validation", False)
-                    }
+                        "pyld_validation": self._pyld_available
+                        and self.options.get("strict_validation", False),
+                    },
                 )
             else:
                 self._report_progress(
                     ProgressPhase.ERROR,
-                    0, 4,
+                    0,
+                    4,
                     f"JSON-LD validation failed with {len(self._validation_errors)} errors",
                     data_processed=content_length,
                     total_data=content_length,
                     details={
                         "validation_successful": False,
                         "errors_count": len(self._validation_errors),
-                        "errors": self._validation_errors[:5]  # Include first 5 errors for debugging
-                    }
+                        "errors": self._validation_errors[
+                            :5
+                        ],  # Include first 5 errors for debugging
+                    },
                 )
-            
+
             return validation_successful
 
         except Exception as e:
             self._validation_errors.append(f"Validation error: {str(e)}")
             self._report_progress(
                 ProgressPhase.ERROR,
-                0, 4,
+                0,
+                4,
                 f"Validation exception: {str(e)}",
                 data_processed=0,
                 total_data=len(content),
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
             return False
 
@@ -6183,7 +6376,7 @@ class JSONLDParser(AbstractParser):
                 # Add cancellation check for deeply nested structures
                 if idx % 50 == 0:
                     self._check_cancellation()
-                    
+
                 if isinstance(value, (dict, list)) and self._is_valid_jsonld_structure(
                     value
                 ):
@@ -6213,35 +6406,37 @@ class JSONLDParser(AbstractParser):
         doc_size = len(str(document)) if document else 0
         self._report_progress(
             ProgressPhase.PROCESSING_CONTENT,
-            1, 3,
+            1,
+            3,
             "Extracting namespaces from JSON-LD document",
             data_processed=0,
             total_data=doc_size,
-            details={"extraction_stage": "namespace_extraction"}
+            details={"extraction_stage": "namespace_extraction"},
         )
         self._check_cancellation()
-        
+
         namespaces = {}
 
         try:
             # Extract from @context
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                2, 3,
+                2,
+                3,
                 "Processing @context for namespace extraction",
                 data_processed=doc_size // 2,
                 total_data=doc_size,
-                details={"has_context": "@context" in document}
+                details={"has_context": "@context" in document},
             )
             self._check_cancellation()
-            
+
             context = document.get("@context", {})
             if isinstance(context, dict):
                 for idx, (key, value) in enumerate(context.items()):
                     # Add cancellation check for large contexts
                     if idx % 20 == 0:
                         self._check_cancellation()
-                        
+
                     if isinstance(value, str) and (
                         value.startswith("http://") or value.startswith("https://")
                     ):
@@ -6268,15 +6463,16 @@ class JSONLDParser(AbstractParser):
             # Report successful completion
             self._report_progress(
                 ProgressPhase.POST_PROCESSING,
-                3, 3,
+                3,
+                3,
                 "Namespace extraction completed successfully",
                 data_processed=doc_size,
                 total_data=doc_size,
                 details={
                     "extraction_stage": "completed",
                     "namespaces_found": len(namespaces),
-                    "namespace_prefixes": list(namespaces.keys())
-                }
+                    "namespace_prefixes": list(namespaces.keys()),
+                },
             )
 
             return namespaces
@@ -6285,11 +6481,12 @@ class JSONLDParser(AbstractParser):
             self.logger.warning(f"Error extracting namespaces: {str(e)}")
             self._report_progress(
                 ProgressPhase.ERROR,
-                0, 3,
+                0,
+                3,
                 f"Namespace extraction failed: {str(e)}",
                 data_processed=0,
                 total_data=doc_size,
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
             return {}
 
@@ -6467,15 +6664,19 @@ class JSONLDParser(AbstractParser):
         try:
             # Estimate document size for progress tracking
             doc_size = len(str(document)) if document else 0
-            
+
             # Report expansion initialization
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                1, 5,
+                1,
+                5,
                 "Initializing JSON-LD expansion",
                 data_processed=0,
                 total_data=doc_size,
-                details={"document_type": type(document).__name__, "pyld_available": self._pyld_available}
+                details={
+                    "document_type": type(document).__name__,
+                    "pyld_available": self._pyld_available,
+                },
             )
             self._check_cancellation()
 
@@ -6483,11 +6684,12 @@ class JSONLDParser(AbstractParser):
             if self.options.get("safe_mode", True):
                 self._report_progress(
                     ProgressPhase.PROCESSING_CONTENT,
-                    2, 5,
+                    2,
+                    5,
                     "Applying security restrictions",
                     data_processed=doc_size // 5,
                     total_data=doc_size,
-                    details={"safe_mode": True}
+                    details={"safe_mode": True},
                 )
                 self._check_cancellation()
                 self._apply_safe_mode_restrictions(document)
@@ -6496,14 +6698,15 @@ class JSONLDParser(AbstractParser):
             if self._pyld_available:
                 self._report_progress(
                     ProgressPhase.PROCESSING_CONTENT,
-                    3, 5,
+                    3,
+                    5,
                     "Preparing expansion options for pyld",
                     data_processed=doc_size * 2 // 5,
                     total_data=doc_size,
-                    details={"expansion_method": "pyld"}
+                    details={"expansion_method": "pyld"},
                 )
                 self._check_cancellation()
-                
+
                 try:
                     # Prepare expansion options
                     expand_options = {
@@ -6526,14 +6729,15 @@ class JSONLDParser(AbstractParser):
                     # Perform expansion
                     self._report_progress(
                         ProgressPhase.PROCESSING_CONTENT,
-                        4, 5,
+                        4,
+                        5,
                         "Expanding JSON-LD document with pyld",
                         data_processed=doc_size * 3 // 5,
                         total_data=doc_size,
-                        details={"expansion_options": list(expand_options.keys())}
+                        details={"expansion_options": list(expand_options.keys())},
                     )
                     self._check_cancellation()
-                    
+
                     expanded = self._jsonld.expand(document, expand_options)
 
                     # Ensure we return a list
@@ -6543,15 +6747,16 @@ class JSONLDParser(AbstractParser):
                     # Report successful expansion
                     self._report_progress(
                         ProgressPhase.COMPLETED,
-                        5, 5,
+                        5,
+                        5,
                         "JSON-LD expansion completed successfully",
                         data_processed=doc_size,
                         total_data=doc_size,
                         details={
                             "expansion_method": "pyld",
                             "result_type": type(expanded).__name__,
-                            "result_length": len(expanded)
-                        }
+                            "result_length": len(expanded),
+                        },
                     )
 
                     return expanded
@@ -6559,13 +6764,17 @@ class JSONLDParser(AbstractParser):
                 except Exception as e:
                     self._report_progress(
                         ProgressPhase.ERROR,
-                        0, 5,
+                        0,
+                        5,
                         f"pyld expansion failed: {str(e)}",
                         data_processed=doc_size * 3 // 5,
                         total_data=doc_size,
-                        details={"error_type": type(e).__name__, "fallback_available": True}
+                        details={
+                            "error_type": type(e).__name__,
+                            "fallback_available": True,
+                        },
                     )
-                    
+
                     if not self.options.get("error_recovery", True):
                         raise OntologyException(f"JSON-LD expansion failed: {str(e)}")
                     self.logger.warning(
@@ -6575,42 +6784,45 @@ class JSONLDParser(AbstractParser):
             # Fallback implementation
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                4, 5,
+                4,
+                5,
                 "Using fallback expansion method",
                 data_processed=doc_size * 4 // 5,
                 total_data=doc_size,
-                details={"expansion_method": "fallback"}
+                details={"expansion_method": "fallback"},
             )
             self._check_cancellation()
-            
+
             result = self._expand_fallback(document)
-            
+
             # Report fallback completion
             self._report_progress(
                 ProgressPhase.COMPLETED,
-                5, 5,
+                5,
+                5,
                 "JSON-LD expansion completed using fallback",
                 data_processed=doc_size,
                 total_data=doc_size,
                 details={
                     "expansion_method": "fallback",
                     "result_type": type(result).__name__,
-                    "result_length": len(result) if isinstance(result, list) else 1
-                }
+                    "result_length": len(result) if isinstance(result, list) else 1,
+                },
             )
-            
+
             return result
 
         except Exception as e:
             self._report_progress(
                 ProgressPhase.ERROR,
-                0, 5,
+                0,
+                5,
                 f"JSON-LD expansion failed: {str(e)}",
                 data_processed=0,
-                total_data=doc_size if 'doc_size' in locals() else 0,
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                total_data=doc_size if "doc_size" in locals() else 0,
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
-            
+
             if isinstance(e, OntologyException):
                 raise
             raise OntologyException(f"Document expansion failed: {str(e)}")
@@ -7176,86 +7388,95 @@ class JSONLDParser(AbstractParser):
         """
         try:
             doc_size = len(str(document)) if document else 0
-            
+
             # Report conversion initialization
             self._report_progress(
                 ProgressPhase.BUILDING_ONTOLOGY,
-                1, 6,
+                1,
+                6,
                 "Initializing JSON-LD to ontology conversion",
                 data_processed=0,
                 total_data=doc_size,
-                details={"document_type": type(document).__name__}
+                details={"document_type": type(document).__name__},
             )
             self._check_cancellation()
-            
+
             if not Ontology:
                 self.logger.warning("Ontology class not available")
                 self._report_progress(
                     ProgressPhase.ERROR,
-                    0, 6,
+                    0,
+                    6,
                     "Ontology class not available",
                     data_processed=0,
                     total_data=doc_size,
-                    details={"error_type": "missing_ontology_class"}
+                    details={"error_type": "missing_ontology_class"},
                 )
                 return None
 
             # Extract terms and relationships
             self._report_progress(
                 ProgressPhase.EXTRACTING_TERMS,
-                2, 6,
+                2,
+                6,
                 "Extracting terms from JSON-LD document",
                 data_processed=doc_size // 6,
                 total_data=doc_size,
-                details={"extraction_stage": "terms"}
+                details={"extraction_stage": "terms"},
             )
             self._check_cancellation()
-            
+
             terms_list = self.extract_terms(document, **kwargs)
-            
+
             self._report_progress(
                 ProgressPhase.EXTRACTING_RELATIONSHIPS,
-                3, 6,
+                3,
+                6,
                 "Extracting relationships from JSON-LD document",
                 data_processed=doc_size * 2 // 6,
                 total_data=doc_size,
-                details={"extraction_stage": "relationships", "terms_extracted": len(terms_list)}
+                details={
+                    "extraction_stage": "relationships",
+                    "terms_extracted": len(terms_list),
+                },
             )
             self._check_cancellation()
-            
+
             relationships_list = self.extract_relationships(document, **kwargs)
-            
+
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                4, 6,
+                4,
+                6,
                 "Extracting metadata from JSON-LD document",
                 data_processed=doc_size * 3 // 6,
                 total_data=doc_size,
                 details={
                     "extraction_stage": "metadata",
                     "terms_extracted": len(terms_list),
-                    "relationships_extracted": len(relationships_list)
-                }
+                    "relationships_extracted": len(relationships_list),
+                },
             )
             self._check_cancellation()
-            
+
             metadata = self.extract_metadata(document, **kwargs)
 
             # Convert lists to dictionaries as expected by Ontology class
             self._report_progress(
                 ProgressPhase.BUILDING_ONTOLOGY,
-                5, 6,
+                5,
+                6,
                 "Converting extracted data to ontology format",
                 data_processed=doc_size * 4 // 6,
                 total_data=doc_size,
                 details={
                     "conversion_stage": "organizing_data",
                     "terms_count": len(terms_list),
-                    "relationships_count": len(relationships_list)
-                }
+                    "relationships_count": len(relationships_list),
+                },
             )
             self._check_cancellation()
-            
+
             terms_dict = {term.id: term for term in terms_list}
             relationships_dict = {rel.id: rel for rel in relationships_list}
 
@@ -7267,18 +7488,19 @@ class JSONLDParser(AbstractParser):
             # Create ontology object
             self._report_progress(
                 ProgressPhase.BUILDING_ONTOLOGY,
-                6, 6,
+                6,
+                6,
                 "Creating final ontology object",
                 data_processed=doc_size * 5 // 6,
                 total_data=doc_size,
                 details={
                     "ontology_id": ontology_id,
                     "terms_dict_size": len(terms_dict),
-                    "relationships_dict_size": len(relationships_dict)
-                }
+                    "relationships_dict_size": len(relationships_dict),
+                },
             )
             self._check_cancellation()
-            
+
             ontology = Ontology(
                 id=ontology_id,
                 name=kwargs.get(
@@ -7300,7 +7522,8 @@ class JSONLDParser(AbstractParser):
             # Report successful completion
             self._report_progress(
                 ProgressPhase.COMPLETED,
-                6, 6,
+                6,
+                6,
                 "JSON-LD to ontology conversion completed successfully",
                 data_processed=doc_size,
                 total_data=doc_size,
@@ -7308,8 +7531,8 @@ class JSONLDParser(AbstractParser):
                     "ontology_id": ontology.id,
                     "ontology_name": ontology.name,
                     "final_terms_count": len(ontology.terms),
-                    "final_relationships_count": len(ontology.relationships)
-                }
+                    "final_relationships_count": len(ontology.relationships),
+                },
             )
 
             return ontology
@@ -7318,11 +7541,12 @@ class JSONLDParser(AbstractParser):
             self.logger.error(f"Error converting to ontology: {str(e)}")
             self._report_progress(
                 ProgressPhase.ERROR,
-                0, 6,
+                0,
+                6,
                 f"Ontology conversion failed: {str(e)}",
                 data_processed=0,
-                total_data=doc_size if 'doc_size' in locals() else 0,
-                details={"error_type": type(e).__name__, "error_message": str(e)}
+                total_data=doc_size if "doc_size" in locals() else 0,
+                details={"error_type": type(e).__name__, "error_message": str(e)},
             )
             return None
 
@@ -7349,7 +7573,7 @@ class JSONLDParser(AbstractParser):
                 # Add cancellation check every 10 nodes to avoid too much overhead
                 if idx % 10 == 0:
                     self._check_cancellation()
-                
+
                 if not isinstance(node, dict):
                     continue
 
@@ -7435,7 +7659,7 @@ class JSONLDParser(AbstractParser):
                 # Add cancellation check every 10 nodes to avoid too much overhead
                 if node_idx % 10 == 0:
                     self._check_cancellation()
-                
+
                 if not isinstance(node, dict):
                     continue
 
@@ -7846,32 +8070,37 @@ class JSONLDParser(AbstractParser):
 
         Returns:
             Dict[str, Any]: Data with default context
-        """        
+        """
         # Report context processing start
         self._report_progress(
             ProgressPhase.PROCESSING_CONTENT,
-            1, 3,
+            1,
+            3,
             "Processing JSON-LD context",
             data_processed=0,
             total_data=len(str(data)) if data else 0,
-            details={"context_operation": "add_default", "has_context": "@context" in data if isinstance(data, dict) else False}
+            details={
+                "context_operation": "add_default",
+                "has_context": "@context" in data if isinstance(data, dict) else False,
+            },
         )
         self._check_cancellation()
-        
+
         if not isinstance(data, dict):
             return data
 
         if "@context" not in data:
             self._report_progress(
                 ProgressPhase.PROCESSING_CONTENT,
-                2, 3,
+                2,
+                3,
                 "Adding default JSON-LD context",
                 data_processed=len(str(data)) // 2,
                 total_data=len(str(data)),
-                details={"context_operation": "creating_default_context"}
+                details={"context_operation": "creating_default_context"},
             )
             self._check_cancellation()
-            
+
             default_context = {
                 "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
                 "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
@@ -7883,32 +8112,34 @@ class JSONLDParser(AbstractParser):
             data_with_context.update(data)
 
             self.logger.info("Added default JSON-LD context")
-            
+
             # Report completion
             self._report_progress(
                 ProgressPhase.POST_PROCESSING,
-                3, 3,
+                3,
+                3,
                 "JSON-LD context processing completed",
                 data_processed=len(str(data_with_context)),
                 total_data=len(str(data_with_context)),
                 details={
                     "context_operation": "context_added",
-                    "default_namespaces": list(default_context.keys())
-                }
+                    "default_namespaces": list(default_context.keys()),
+                },
             )
-            
+
             return data_with_context
 
         # Report completion for existing context
         self._report_progress(
             ProgressPhase.POST_PROCESSING,
-            3, 3,
+            3,
+            3,
             "JSON-LD context already present",
             data_processed=len(str(data)),
             total_data=len(str(data)),
-            details={"context_operation": "context_exists"}
+            details={"context_operation": "context_exists"},
         )
-        
+
         return data
 
     def _simple_ontology_conversion(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -8025,3 +8256,321 @@ class JSONLDParser(AbstractParser):
 
         # Fallback to parent implementation
         return super()._recover_default(error_context, **kwargs)
+
+
+# ============================================================================
+# Format Auto-Detection Functions
+# ============================================================================
+
+
+def detect_format_from_extension(file_path: Union[str, Path]) -> Optional[str]:
+    """
+    Detect format based on file extension.
+
+    Args:
+        file_path (Union[str, Path]): Path to the file
+
+    Returns:
+        Optional[str]: Detected format or None if extension is not recognized
+
+    Examples:
+        >>> detect_format_from_extension("ontology.owl")
+        'owl'
+        >>> detect_format_from_extension("data.csv")
+        'csv'
+        >>> detect_format_from_extension("unknown.xyz")
+        None
+    """
+    logger = get_logger(__name__ + ".format_detection")
+
+    try:
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+
+        if not file_path.suffix:
+            logger.debug(f"No file extension found for: {file_path}")
+            return None
+
+        ext = file_path.suffix.lower().lstrip(".")
+        logger.debug(f"Analyzing extension: {ext}")
+
+        # Define extension to format mappings
+        extension_mappings = {
+            # OWL formats
+            "owl": "owl",
+            "rdf": "rdf",
+            "ttl": "ttl",
+            "turtle": "ttl",
+            "nt": "nt",
+            "ntriples": "nt",
+            "n3": "n3",
+            "xml": "xml",
+            # JSON-LD formats
+            "jsonld": "jsonld",
+            "json-ld": "jsonld",
+            "json": "json",
+            # CSV formats
+            "csv": "csv",
+            "tsv": "tsv",
+            "txt": "txt",
+            "tab": "tsv",
+            "dat": "csv",
+        }
+
+        detected_format = extension_mappings.get(ext)
+        if detected_format:
+            logger.debug(f"Format detected from extension '{ext}': {detected_format}")
+        else:
+            logger.debug(f"No format mapping found for extension: {ext}")
+
+        return detected_format
+
+    except Exception as e:
+        logger.error(f"Error detecting format from extension: {str(e)}")
+        return None
+
+
+def detect_format_from_content(content: str) -> Optional[str]:
+    """
+    Analyze file content to determine format when extension is ambiguous.
+
+    This function uses content analysis to identify the format by examining
+    characteristic patterns in the data. It leverages the existing detect_format
+    methods from individual parsers.
+
+    Args:
+        content (str): File content to analyze
+
+    Returns:
+        Optional[str]: Detected format or None if format cannot be determined
+
+    Examples:
+        >>> detect_format_from_content('{"@context": {...}}')
+        'jsonld'
+        >>> detect_format_from_content('@prefix owl: <http://...>')
+        'ttl'
+        >>> detect_format_from_content('name,age,city\\nJohn,25,NYC')
+        'csv'
+    """
+    logger = get_logger(__name__ + ".format_detection")
+
+    try:
+        if not content or not content.strip():
+            logger.debug("Empty content provided")
+            return None
+
+        content_sample = content.strip()[:10000]  # Analyze first 10KB for performance
+        logger.debug(f"Analyzing content sample of {len(content_sample)} characters")
+
+        # Try OWL format detection first (most comprehensive)
+        try:
+            owl_parser = OWLParser()
+            owl_format = owl_parser.detect_format(content_sample)
+            if owl_format and owl_format != "unknown":
+                logger.debug(f"OWL parser detected format: {owl_format}")
+                return owl_format
+        except Exception as e:
+            logger.debug(f"OWL format detection failed: {str(e)}")
+
+        # Try JSON-LD format detection
+        try:
+            jsonld_parser = JSONLDParser()
+            jsonld_format = jsonld_parser.detect_format(content_sample)
+            if jsonld_format and jsonld_format != "unknown":
+                logger.debug(f"JSON-LD parser detected format: {jsonld_format}")
+                return jsonld_format
+        except Exception as e:
+            logger.debug(f"JSON-LD format detection failed: {str(e)}")
+
+        # Try CSV format detection
+        try:
+            csv_parser = CSVParser()
+            csv_format = csv_parser.detect_format(content_sample)
+            if csv_format and csv_format != "unknown":
+                logger.debug(f"CSV parser detected format: {csv_format}")
+                return csv_format
+        except Exception as e:
+            logger.debug(f"CSV format detection failed: {str(e)}")
+
+        logger.debug("No format could be detected from content")
+        return None
+
+    except Exception as e:
+        logger.error(f"Error detecting format from content: {str(e)}")
+        return None
+
+
+def get_parser_for_format(format_name: str) -> Optional[type]:
+    """
+    Return the appropriate parser class for the detected format.
+
+    Args:
+        format_name (str): Name of the format
+
+    Returns:
+        Optional[type]: Parser class or None if format is not supported
+
+    Examples:
+        >>> get_parser_for_format("owl")
+        <class 'OWLParser'>
+        >>> get_parser_for_format("csv")
+        <class 'CSVParser'>
+        >>> get_parser_for_format("unknown")
+        None
+    """
+    logger = get_logger(__name__ + ".format_detection")
+
+    try:
+        if not format_name:
+            logger.debug("No format name provided")
+            return None
+
+        format_lower = format_name.lower().strip()
+        logger.debug(f"Finding parser for format: {format_lower}")
+
+        # Define format to parser mappings
+        format_to_parser = {
+            # OWL formats -> OWLParser
+            "owl": OWLParser,
+            "rdf": OWLParser,
+            "ttl": OWLParser,
+            "turtle": OWLParser,
+            "nt": OWLParser,
+            "ntriples": OWLParser,
+            "n3": OWLParser,
+            "xml": OWLParser,
+            # JSON-LD formats -> JSONLDParser (handle both "jsonld" and "json-ld")
+            "jsonld": JSONLDParser,
+            "json-ld": JSONLDParser,
+            "json": JSONLDParser,
+            # CSV formats -> CSVParser
+            "csv": CSVParser,
+            "tsv": CSVParser,
+            "txt": CSVParser,
+        }
+
+        parser_class = format_to_parser.get(format_lower)
+        if parser_class:
+            logger.debug(
+                f"Found parser class for format '{format_lower}': {parser_class.__name__}"
+            )
+        else:
+            logger.debug(f"No parser class found for format: {format_lower}")
+
+        return parser_class
+
+    except Exception as e:
+        logger.error(f"Error getting parser for format '{format_name}': {str(e)}")
+        return None
+
+
+def auto_detect_parser(
+    file_path: Optional[Union[str, Path]] = None, content: Optional[str] = None
+) -> Optional[AbstractParser]:
+    """
+    Main auto-detection function that returns an appropriate parser instance.
+
+    This function attempts to detect the format using multiple strategies:
+    1. File extension analysis (if file_path provided)
+    2. Content analysis (if content provided)
+    3. Fallback strategies for edge cases
+
+    Args:
+        file_path (Optional[Union[str, Path]]): Path to the file (optional)
+        content (Optional[str]): File content (optional)
+
+    Returns:
+        Optional[AbstractParser]: Configured parser instance or None if detection fails
+
+    Raises:
+        ValueError: If neither file_path nor content is provided
+
+    Examples:
+        >>> parser = auto_detect_parser(file_path="ontology.owl")
+        >>> isinstance(parser, OWLParser)
+        True
+
+        >>> parser = auto_detect_parser(content='{"@context": {...}}')
+        >>> isinstance(parser, JSONLDParser)
+        True
+    """
+    logger = get_logger(__name__ + ".format_detection")
+
+    # Validate parameters first (let ValueError propagate)
+    if not file_path and not content:
+        raise ValueError("Either file_path or content must be provided")
+
+    try:
+        logger.debug("Starting auto-detection process")
+
+        detected_format = None
+        detection_method = None
+
+        # Strategy 1: Try extension-based detection first (fastest)
+        if file_path:
+            logger.debug("Attempting extension-based detection")
+            detected_format = detect_format_from_extension(file_path)
+            if detected_format:
+                detection_method = "extension"
+                logger.debug(f"Format detected by extension: {detected_format}")
+
+        # Strategy 2: Try content-based detection if extension failed or no file_path
+        if not detected_format and content:
+            logger.debug("Attempting content-based detection")
+            detected_format = detect_format_from_content(content)
+            if detected_format:
+                detection_method = "content"
+                logger.debug(f"Format detected by content: {detected_format}")
+
+        # Strategy 3: If we have both file_path and content, but extension detection
+        # was ambiguous, try reading the file and analyzing content
+        if not detected_format and file_path and not content:
+            try:
+                logger.debug("Reading file for content analysis")
+                file_path_obj = (
+                    Path(file_path) if isinstance(file_path, str) else file_path
+                )
+                if file_path_obj.exists():
+                    with open(
+                        file_path_obj, "r", encoding="utf-8", errors="ignore"
+                    ) as f:
+                        file_content = f.read()
+                    detected_format = detect_format_from_content(file_content)
+                    if detected_format:
+                        detection_method = "file_content"
+                        logger.debug(
+                            f"Format detected by reading file: {detected_format}"
+                        )
+            except Exception as e:
+                logger.debug(f"Could not read file for content analysis: {str(e)}")
+
+        # Get appropriate parser class
+        if detected_format:
+            parser_class = get_parser_for_format(detected_format)
+            if parser_class:
+                logger.info(
+                    f"Auto-detected format '{detected_format}' using {detection_method} method"
+                )
+                parser_instance = parser_class()
+
+                # Add detection metadata to parser if it supports it
+                if hasattr(parser_instance, "_detection_metadata"):
+                    parser_instance._detection_metadata = {
+                        "detected_format": detected_format,
+                        "detection_method": detection_method,
+                        "auto_detected": True,
+                    }
+
+                return parser_instance
+            else:
+                logger.warning(
+                    f"No parser class found for detected format: {detected_format}"
+                )
+        else:
+            logger.warning("Could not detect format using any available method")
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error in auto-detection process: {str(e)}")
+        return None
