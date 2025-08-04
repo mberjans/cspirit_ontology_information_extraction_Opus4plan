@@ -13,6 +13,7 @@ Core Parser Classes:
     CSVParser: Concrete CSV parser implementation with dialect auto-detection
     JSONLDParser: Concrete JSON-LD parser implementation with full JSON-LD transformation
     PDFParser: Concrete PDF parser implementation for scientific document processing
+    XMLParser: Concrete XML parser implementation for PMC (PubMed Central) format documents
 
 Format Auto-Detection System:
     detect_format_from_extension: Detect format based on file extension analysis
@@ -142,6 +143,7 @@ __all__ = [
     "CSVParser",
     "JSONLDParser",
     "PDFParser",
+    "XMLParser",
     # Format auto-detection functions
     "detect_format_from_extension",
     "detect_format_from_content",
@@ -9122,6 +9124,16 @@ def detect_format_from_content(content: str) -> Optional[str]:
         except Exception as e:
             logger.debug(f"CSV format detection failed: {str(e)}")
 
+        # Try XML format detection (for PMC and scientific articles)
+        if XMLParser is not None:
+            try:
+                xml_parser = XMLParser()
+                if xml_parser.validate(content_sample):
+                    logger.debug("XML parser validated content as XML")
+                    return "xml"
+            except Exception as e:
+                logger.debug(f"XML format detection failed: {str(e)}")
+
         logger.debug("No format could be detected from content")
         return None
 
@@ -9168,7 +9180,9 @@ def get_parser_for_format(format_name: str) -> Optional[type]:
             "nt": OWLParser,
             "ntriples": OWLParser,
             "n3": OWLParser,
-            "xml": OWLParser,
+            # XML will be handled by XMLParser (PMC/scientific articles) if available, otherwise OWLParser
+            "xml": XMLParser if XMLParser is not None else OWLParser,
+            "nxml": XMLParser if XMLParser is not None else OWLParser,
             # JSON-LD formats -> JSONLDParser (handle both "jsonld" and "json-ld")
             "jsonld": JSONLDParser,
             "json-ld": JSONLDParser,
@@ -9178,7 +9192,7 @@ def get_parser_for_format(format_name: str) -> Optional[type]:
             "tsv": CSVParser,
             "txt": CSVParser,
         }
-        
+
         # Add PDF parser if available
         if PDFParser is not None:
             format_to_parser["pdf"] = PDFParser
@@ -9315,3 +9329,8 @@ try:
     from .pdf_parser import PDFParser
 except ImportError:
     PDFParser = None
+
+try:
+    from .xml_parser import XMLParser
+except ImportError:
+    XMLParser = None
