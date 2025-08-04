@@ -142,25 +142,29 @@ def mock_lxml():
         mock_element.tag = "article"
         mock_element.text = "Sample content"
         mock_element.attrib = {"id": "test-article"}
-        mock_element.nsmap = {"": "http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd"}
-        
+        mock_element.nsmap = {
+            "": "http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd"
+        }
+
         # Mock find methods
         mock_element.find = Mock(return_value=mock_element)
         mock_element.findall = Mock(return_value=[mock_element])
         mock_element.xpath = Mock(return_value=[mock_element])
-        
+
         # Mock tree structure
         mock_element.getparent = Mock(return_value=None)
         mock_element.getchildren = Mock(return_value=[])
         mock_element.__iter__ = Mock(return_value=iter([]))
-        
+
         # Mock parsing functions
-        mock_etree.parse = Mock(return_value=Mock(getroot=Mock(return_value=mock_element)))
+        mock_etree.parse = Mock(
+            return_value=Mock(getroot=Mock(return_value=mock_element))
+        )
         mock_etree.fromstring = Mock(return_value=mock_element)
         mock_etree.XMLParser = Mock()
         mock_etree.XMLSchema = Mock()
         mock_etree.XMLSyntaxError = Exception
-        
+
         yield mock_etree
 
 
@@ -176,16 +180,16 @@ def mock_elementtree():
         mock_element.find = Mock(return_value=mock_element)
         mock_element.findall = Mock(return_value=[mock_element])
         mock_element.iter = Mock(return_value=iter([mock_element]))
-        
+
         # Mock tree
         mock_tree = Mock()
         mock_tree.getroot = Mock(return_value=mock_element)
-        
+
         # Mock parsing functions
         mock_et.parse = Mock(return_value=mock_tree)
         mock_et.fromstring = Mock(return_value=mock_element)
         mock_et.ParseError = Exception
-        
+
         yield mock_et
 
 
@@ -201,21 +205,21 @@ def mock_minidom():
         mock_element.attributes = {}
         mock_element.childNodes = []
         mock_element.getElementsByTagName = Mock(return_value=[mock_element])
-        
+
         mock_doc.documentElement = mock_element
         mock_doc.getElementsByTagName = Mock(return_value=[mock_element])
-        
+
         # Mock parsing functions
         mock_dom.parse = Mock(return_value=mock_doc)
         mock_dom.parseString = Mock(return_value=mock_doc)
-        
+
         yield mock_dom
 
 
 @pytest.fixture
 def sample_xml_content():
     """Sample XML content for testing."""
-    return '''<?xml version="1.0" encoding="UTF-8"?>
+    return """<?xml version="1.0" encoding="UTF-8"?>
 <article xmlns="http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd">
     <front>
         <article-meta>
@@ -262,13 +266,13 @@ def sample_xml_content():
             </ref>
         </ref-list>
     </back>
-</article>'''
+</article>"""
 
 
 @pytest.fixture
 def sample_rdf_xml_content():
     """Sample RDF/XML content for testing."""
-    return '''<?xml version="1.0" encoding="UTF-8"?>
+    return """<?xml version="1.0" encoding="UTF-8"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
          xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
          xmlns:owl="http://www.w3.org/2002/07/owl#">
@@ -280,7 +284,7 @@ def sample_rdf_xml_content():
         <rdfs:label>Ontology</rdfs:label>
         <rdfs:comment>A formal representation of knowledge as a set of concepts</rdfs:comment>
     </owl:Class>
-</rdf:RDF>'''
+</rdf:RDF>"""
 
 
 @pytest.fixture
@@ -306,8 +310,16 @@ def sample_pmc_article_content():
             "conclusion": "In conclusion, we have presented a robust method for ontology extraction...",
         },
         "figures": [
-            {"id": "fig1", "caption": "Architecture of the proposed system", "graphic_ref": "fig1.jpg"},
-            {"id": "fig2", "caption": "Performance comparison", "graphic_ref": "fig2.png"},
+            {
+                "id": "fig1",
+                "caption": "Architecture of the proposed system",
+                "graphic_ref": "fig1.jpg",
+            },
+            {
+                "id": "fig2",
+                "caption": "Performance comparison",
+                "graphic_ref": "fig2.png",
+            },
         ],
         "tables": [
             {"id": "tab1", "caption": "Dataset statistics", "rows": 5, "cols": 4},
@@ -322,7 +334,7 @@ def sample_pmc_article_content():
                 "year": "2022",
             },
             {
-                "id": "ref2", 
+                "id": "ref2",
                 "authors": ["Brown, A.", "Wilson, B."],
                 "title": "Advanced NLP techniques",
                 "conference": "ICML 2021",
@@ -520,7 +532,9 @@ class TestXMLParserParsing:
         parser = mock_xml_parser()
         mock_result = Mock()
         mock_result.source_type = "string"
-        mock_result.namespaces = {"": "http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd"}
+        mock_result.namespaces = {
+            "": "http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd"
+        }
         parser.parse_string.return_value = mock_result
 
         result = parser.parse_string(sample_xml_content)
@@ -536,7 +550,7 @@ class TestXMLParserParsing:
         mock_result.encoding = "utf-8"
         parser.parse_bytes.return_value = mock_result
 
-        xml_bytes = sample_xml_content.encode('utf-8')
+        xml_bytes = sample_xml_content.encode("utf-8")
         result = parser.parse_bytes(xml_bytes)
 
         assert result == mock_result
@@ -549,7 +563,9 @@ class TestXMLParserParsing:
         mock_result = Mock()
         parser.parse_stream.return_value = mock_result
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix=".xml", encoding='utf-8') as tmp_file:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".xml", encoding="utf-8"
+        ) as tmp_file:
             tmp_file.write('<?xml version="1.0"?><root>test content</root>')
             tmp_file.seek(0)
 
@@ -569,7 +585,9 @@ class TestXMLParserParsing:
         parser.parse_string.return_value = mock_result
 
         parser.set_options({"namespace_aware": True, "preserve_namespaces": True})
-        result = parser.parse_string("<root xmlns:pmc='http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd'/>")
+        result = parser.parse_string(
+            "<root xmlns:pmc='http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd'/>"
+        )
 
         assert result == mock_result
         assert len(result.namespaces) == 2
@@ -584,7 +602,9 @@ class TestXMLParserParsing:
         mock_result.detected_encoding = "iso-8859-1"
         parser.parse_bytes.return_value = mock_result
 
-        xml_with_encoding = b'<?xml version="1.0" encoding="iso-8859-1"?><root>content</root>'
+        xml_with_encoding = (
+            b'<?xml version="1.0" encoding="iso-8859-1"?><root>content</root>'
+        )
         result = parser.parse_bytes(xml_with_encoding)
 
         assert result == mock_result
@@ -807,9 +827,7 @@ class TestXMLParserMetadataExtraction:
     def test_extract_abstract(self, mock_xml_parser):
         """Test extracting abstract from scientific article."""
         parser = mock_xml_parser()
-        expected_abstract = (
-            "This paper presents novel approaches for ontology extraction from XML documents..."
-        )
+        expected_abstract = "This paper presents novel approaches for ontology extraction from XML documents..."
         parser.extract_abstract.return_value = expected_abstract
 
         parsed_result = Mock()
@@ -927,9 +945,7 @@ class TestXMLParserSectionIdentification:
     def test_extract_introduction(self, mock_xml_parser):
         """Test extracting introduction section."""
         parser = mock_xml_parser()
-        expected_intro = (
-            "The field of ontology information extraction from XML documents has grown significantly..."
-        )
+        expected_intro = "The field of ontology information extraction from XML documents has grown significantly..."
         parser.extract_introduction.return_value = expected_intro
 
         parsed_result = Mock()
@@ -942,9 +958,7 @@ class TestXMLParserSectionIdentification:
     def test_extract_methods(self, mock_xml_parser):
         """Test extracting methods section."""
         parser = mock_xml_parser()
-        expected_methods = (
-            "We employed a combination of XML parsing techniques and natural language processing..."
-        )
+        expected_methods = "We employed a combination of XML parsing techniques and natural language processing..."
         parser.extract_methods.return_value = expected_methods
 
         parsed_result = Mock()
@@ -957,9 +971,7 @@ class TestXMLParserSectionIdentification:
     def test_extract_results(self, mock_xml_parser):
         """Test extracting results section."""
         parser = mock_xml_parser()
-        expected_results = (
-            "Our XML-based extraction approach achieved 97% accuracy on the test dataset..."
-        )
+        expected_results = "Our XML-based extraction approach achieved 97% accuracy on the test dataset..."
         parser.extract_results.return_value = expected_results
 
         parsed_result = Mock()
@@ -972,9 +984,7 @@ class TestXMLParserSectionIdentification:
     def test_extract_discussion(self, mock_xml_parser):
         """Test extracting discussion section."""
         parser = mock_xml_parser()
-        expected_discussion = (
-            "The results demonstrate the effectiveness of XML-based parsing for ontology extraction..."
-        )
+        expected_discussion = "The results demonstrate the effectiveness of XML-based parsing for ontology extraction..."
         parser.extract_discussion.return_value = expected_discussion
 
         parsed_result = Mock()
@@ -1049,9 +1059,18 @@ class TestXMLParserSectionIdentification:
             "methods": {
                 "content": "Methods overview...",
                 "subsections": {
-                    "data_collection": {"title": "Data Collection", "content": "We collected..."},
-                    "preprocessing": {"title": "Data Preprocessing", "content": "XML preprocessing..."},
-                    "analysis": {"title": "Analysis Methods", "content": "Statistical analysis..."},
+                    "data_collection": {
+                        "title": "Data Collection",
+                        "content": "We collected...",
+                    },
+                    "preprocessing": {
+                        "title": "Data Preprocessing",
+                        "content": "XML preprocessing...",
+                    },
+                    "analysis": {
+                        "title": "Analysis Methods",
+                        "content": "Statistical analysis...",
+                    },
                 },
             }
         }
@@ -1081,7 +1100,7 @@ class TestXMLParserFigureTableExtraction:
                 "content_type": "image/jpeg",
             },
             {
-                "id": "fig2", 
+                "id": "fig2",
                 "label": "Figure 2",
                 "caption": "Performance comparison of different XML parsers",
                 "graphic_ref": "fig2.png",
@@ -1113,7 +1132,7 @@ class TestXMLParserFigureTableExtraction:
             },
             {
                 "id": "tab2",
-                "label": "Table 2", 
+                "label": "Table 2",
                 "caption": "Performance metrics for XML parsing approaches",
                 "rows": 6,
                 "cols": 4,
@@ -1142,7 +1161,7 @@ class TestXMLParserFigureTableExtraction:
             },
             {
                 "type": "figure",
-                "id": "fig2", 
+                "id": "fig2",
                 "label": "Figure 2",
                 "text": "Performance comparison results",
             },
@@ -1299,7 +1318,10 @@ class TestXMLParserReferenceExtraction:
 
         assert references == expected_references
         assert len(references) == 2
-        assert references[0]["element_citation"]["source"] == "Journal of Information Science"
+        assert (
+            references[0]["element_citation"]["source"]
+            == "Journal of Information Science"
+        )
         parser.extract_references.assert_called_once_with(parsed_result)
 
     def test_parse_citations(self, mock_xml_parser):
@@ -1468,9 +1490,7 @@ class TestXMLParserReferenceExtraction:
 class TestXMLParserConversion:
     """Test converting parsed XML to internal models."""
 
-    def test_to_ontology_conversion(
-        self, mock_xml_parser, sample_pmc_article_content
-    ):
+    def test_to_ontology_conversion(self, mock_xml_parser, sample_pmc_article_content):
         """Test converting parsed XML to Ontology model."""
         parser = mock_xml_parser()
 
@@ -1654,7 +1674,9 @@ class TestXMLParserErrorHandling:
     def test_parse_malformed_xml(self, mock_xml_parser):
         """Test parsing malformed XML raises appropriate error."""
         parser = mock_xml_parser()
-        parser.parse_string.side_effect = ValueError("Malformed XML: unclosed tag 'section'")
+        parser.parse_string.side_effect = ValueError(
+            "Malformed XML: unclosed tag 'section'"
+        )
 
         malformed_xml = "<article><section>content without closing tag"
 
@@ -1668,7 +1690,9 @@ class TestXMLParserErrorHandling:
             "Invalid XML: illegal character in content"
         )
 
-        invalid_xml = "<?xml version='1.0'?><root>content with \x00 null character</root>"
+        invalid_xml = (
+            "<?xml version='1.0'?><root>content with \x00 null character</root>"
+        )
 
         with pytest.raises(ValueError, match="Invalid XML"):
             parser.parse_string(invalid_xml)
@@ -1735,7 +1759,9 @@ class TestXMLParserErrorHandling:
             "Namespace error: undefined namespace prefix 'unknown'"
         )
 
-        xml_with_undefined_ns = "<unknown:root xmlns:other='http://example.com'>content</unknown:root>"
+        xml_with_undefined_ns = (
+            "<unknown:root xmlns:other='http://example.com'>content</unknown:root>"
+        )
 
         with pytest.raises(Exception, match="Namespace error"):
             parser.parse_string(xml_with_undefined_ns)
@@ -1776,13 +1802,13 @@ class TestXMLParserErrorHandling:
         parser = mock_xml_parser()
         parser.parse_string.side_effect = ValueError("Entity expansion limit exceeded")
 
-        malicious_xml = '''<?xml version="1.0"?>
+        malicious_xml = """<?xml version="1.0"?>
         <!DOCTYPE lolz [
           <!ENTITY lol "lol">
           <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
           <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
         ]>
-        <lolz>&lol3;</lolz>'''
+        <lolz>&lol3;</lolz>"""
 
         with pytest.raises(ValueError, match="Entity expansion limit exceeded"):
             parser.parse_string(malicious_xml)
@@ -1794,7 +1820,10 @@ class TestXMLParserErrorHandling:
         mock_result = Mock()
         mock_result.sections_processed = 8
         mock_result.sections_total = 10
-        mock_result.errors = ["Section 7 has malformed tags", "Section 9 missing closing element"]
+        mock_result.errors = [
+            "Section 7 has malformed tags",
+            "Section 9 missing closing element",
+        ]
         mock_result.content = "Recovered partial content"
         parser.parse_file.return_value = mock_result
 
@@ -2304,7 +2333,7 @@ def complex_pmc_article():
         "front": {
             "journal_meta": {
                 "journal_title": "Nature Machine Intelligence",
-                "issn": {"pub_type": "epub", "value": "2522-5839"}
+                "issn": {"pub_type": "epub", "value": "2522-5839"},
             },
             "article_meta": {
                 "title_group": {
@@ -2319,13 +2348,18 @@ def complex_pmc_article():
                         "orcid": "0000-0001-2345-6789",
                     },
                     {
-                        "contrib_type": "author", 
+                        "contrib_type": "author",
                         "name": {"surname": "Rodriguez", "given_names": "Maria"},
                         "xref": {"ref_type": "aff", "rid": "aff2"},
                         "orcid": "0000-0002-3456-7890",
                     },
                 ],
-                "pub_date": {"pub_type": "epub", "year": "2023", "month": "03", "day": "15"},
+                "pub_date": {
+                    "pub_type": "epub",
+                    "year": "2023",
+                    "month": "03",
+                    "day": "15",
+                },
                 "volume": "4",
                 "issue": "3",
                 "fpage": "245",
@@ -2447,30 +2481,30 @@ def temp_xml_files():
         simple_xml = temp_path / "simple.xml"
         simple_xml.write_text(
             '<?xml version="1.0" encoding="UTF-8"?><root><child>content</child></root>',
-            encoding='utf-8'
+            encoding="utf-8",
         )
         files["simple"] = str(simple_xml)
 
         # PMC article XML (mock structure)
         pmc_xml = temp_path / "pmc_article.xml"
-        pmc_content = '''<?xml version="1.0" encoding="UTF-8"?>
+        pmc_content = """<?xml version="1.0" encoding="UTF-8"?>
 <article xmlns="http://dtd.nlm.nih.gov/ncbi/pmc/articleset/nlm-articleset-2.0.dtd">
     <front><article-meta><title-group><article-title>Test Article</article-title></title-group></article-meta></front>
     <body><sec><title>Introduction</title><p>Content here</p></sec></body>
-</article>'''
-        pmc_xml.write_text(pmc_content, encoding='utf-8')
+</article>"""
+        pmc_xml.write_text(pmc_content, encoding="utf-8")
         files["pmc"] = str(pmc_xml)
 
         # RDF/XML file
         rdf_xml = temp_path / "ontology.xml"
-        rdf_content = '''<?xml version="1.0" encoding="UTF-8"?>
+        rdf_content = """<?xml version="1.0" encoding="UTF-8"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
          xmlns:owl="http://www.w3.org/2002/07/owl#">
     <owl:Class rdf:about="http://example.org#TestClass">
         <rdfs:label xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">Test Class</rdfs:label>
     </owl:Class>
-</rdf:RDF>'''
-        rdf_xml.write_text(rdf_content, encoding='utf-8')
+</rdf:RDF>"""
+        rdf_xml.write_text(rdf_content, encoding="utf-8")
         files["rdf"] = str(rdf_xml)
 
         yield files
@@ -2490,7 +2524,9 @@ class TestXMLParserAdvancedFeatures:
         mock_result.child_elements = ["<emphasis>", "<italic>", "<bold>"]
         parser.extract_content.return_value = mock_result
 
-        parser.set_options({"preserve_mixed_content": True, "extract_inline_markup": True})
+        parser.set_options(
+            {"preserve_mixed_content": True, "extract_inline_markup": True}
+        )
 
         parsed_result = Mock()
         result = parser.extract_content(parsed_result)
@@ -2505,11 +2541,19 @@ class TestXMLParserAdvancedFeatures:
         mock_result = Mock()
         mock_result.mathml_expressions = [
             {"id": "math1", "content": "<math><mi>x</mi><mo>=</mo><mn>5</mn></math>"},
-            {"id": "math2", "content": "<math><mfrac><mi>a</mi><mi>b</mi></mfrac></math>"},
+            {
+                "id": "math2",
+                "content": "<math><mfrac><mi>a</mi><mi>b</mi></mfrac></math>",
+            },
         ]
         parser.extract_content.return_value = mock_result
 
-        parser.set_options({"extract_mathml": True, "mathml_namespace": "http://www.w3.org/1998/Math/MathML"})
+        parser.set_options(
+            {
+                "extract_mathml": True,
+                "mathml_namespace": "http://www.w3.org/1998/Math/MathML",
+            }
+        )
 
         parsed_result = Mock()
         result = parser.extract_content(parsed_result)
@@ -2582,7 +2626,9 @@ class TestXMLParserAdvancedFeatures:
                 "element": "activity",
             },
         ]
-        parser.extract_content.return_value = Mock(semantic_annotations=mock_annotations)
+        parser.extract_content.return_value = Mock(
+            semantic_annotations=mock_annotations
+        )
 
         parser.set_options({"extract_semantic_markup": True})
 
@@ -2600,12 +2646,16 @@ class TestXMLParserAdvancedFeatures:
         mock_result.cross_references = {
             "fig_refs": [{"ref_id": "fig1", "text": "Figure 1", "target_found": True}],
             "table_refs": [{"ref_id": "tab1", "text": "Table 1", "target_found": True}],
-            "bibr_refs": [{"ref_id": "ref1", "text": "Smith et al.", "target_found": True}],
+            "bibr_refs": [
+                {"ref_id": "ref1", "text": "Smith et al.", "target_found": True}
+            ],
             "unresolved_refs": [],
         }
         parser.extract_content.return_value = mock_result
 
-        parser.set_options({"resolve_cross_references": True, "validate_references": True})
+        parser.set_options(
+            {"resolve_cross_references": True, "validate_references": True}
+        )
 
         parsed_result = Mock()
         result = parser.extract_content(parsed_result)
