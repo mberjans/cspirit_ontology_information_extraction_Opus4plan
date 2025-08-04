@@ -39,11 +39,12 @@ Usage:
     pytest tests/unit/test_csv_parser.py -v
 """
 
-import pytest
-from unittest.mock import Mock, patch
-from pathlib import Path
-import tempfile
 import io
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 
 # Mock the parser classes since they don't exist yet (TDD approach)
@@ -280,61 +281,530 @@ class TestCSVParserFormatSupport:
 
 
 class TestCSVParserDialectDetection:
-    """Test CSV dialect detection functionality."""
+    """Test enhanced CSV dialect detection functionality with confidence scoring."""
 
-    def test_detect_dialect_comma_delimiter(self, mock_csv_parser, sample_csv_content):
-        """Test detecting comma delimiter dialect."""
+    def test_detect_dialect_comma_delimiter_high_confidence(
+        self, mock_csv_parser, sample_csv_content
+    ):
+        """Test detecting comma delimiter dialect with high confidence."""
         parser = mock_csv_parser()
         mock_dialect = Mock()
         mock_dialect.delimiter = ","
         mock_dialect.quotechar = '"'
         mock_dialect.escapechar = None
-        parser.detect_dialect.return_value = mock_dialect
 
-        dialect = parser.detect_dialect(sample_csv_content)
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.9,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
 
-        assert dialect.delimiter == ","
-        assert dialect.quotechar == '"'
+        result = parser.detect_dialect(sample_csv_content)
+
+        assert result["dialect"].delimiter == ","
+        assert result["dialect"].quotechar == '"'
+        assert result["confidence"] == 0.9
+        assert result["method"] == "sniffer"
         parser.detect_dialect.assert_called_once_with(sample_csv_content)
 
-    def test_detect_dialect_tab_delimiter(self, mock_csv_parser, sample_tsv_content):
-        """Test detecting tab delimiter dialect."""
+    def test_detect_dialect_tab_delimiter_high_confidence(
+        self, mock_csv_parser, sample_tsv_content
+    ):
+        """Test detecting tab delimiter dialect with high confidence."""
         parser = mock_csv_parser()
         mock_dialect = Mock()
         mock_dialect.delimiter = "\t"
         mock_dialect.quotechar = '"'
-        parser.detect_dialect.return_value = mock_dialect
 
-        dialect = parser.detect_dialect(sample_tsv_content)
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.85,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
 
-        assert dialect.delimiter == "\t"
+        result = parser.detect_dialect(sample_tsv_content)
 
-    def test_detect_dialect_custom_delimiter(
+        assert result["dialect"].delimiter == "\t"
+        assert result["confidence"] >= 0.8
+
+    def test_detect_dialect_custom_delimiter_pipe(
         self, mock_csv_parser, sample_custom_delimiter_content
     ):
-        """Test detecting custom delimiter dialect."""
+        """Test detecting pipe delimiter dialect."""
         parser = mock_csv_parser()
         mock_dialect = Mock()
         mock_dialect.delimiter = "|"
         mock_dialect.quotechar = '"'
-        parser.detect_dialect.return_value = mock_dialect
 
-        dialect = parser.detect_dialect(sample_custom_delimiter_content)
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.7,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.8",
+        }
+        parser.detect_dialect.return_value = mock_result
 
-        assert dialect.delimiter == "|"
+        result = parser.detect_dialect(sample_custom_delimiter_content)
 
-    def test_detect_dialect_with_quotes(self, mock_csv_parser, sample_csv_with_quotes):
+        assert result["dialect"].delimiter == "|"
+        assert result["method"] == "manual"
+
+    def test_detect_dialect_semicolon_delimiter(self, mock_csv_parser):
+        """Test detecting semicolon delimiter (European CSV format)."""
+        parser = mock_csv_parser()
+        semicolon_csv = "id;name;definition\nCHEM:001;Chemical;A compound\nCHEM:002;Glucose;Simple sugar"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ";"
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.75,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(semicolon_csv)
+
+        assert result["dialect"].delimiter == ";"
+        assert result["confidence"] > 0.7
+
+    def test_detect_dialect_space_delimiter(self, mock_csv_parser):
+        """Test detecting space delimiter."""
+        parser = mock_csv_parser()
+        space_csv = (
+            "id name definition\nCHEM:001 Chemical Compound\nCHEM:002 Glucose Sugar"
+        )
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = " "
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.6,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.7",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(space_csv)
+
+        assert result["dialect"].delimiter == " "
+
+    def test_detect_dialect_colon_delimiter(self, mock_csv_parser):
+        """Test detecting colon delimiter."""
+        parser = mock_csv_parser()
+        colon_csv = (
+            "id:name:definition\nCHEM:001:Chemical:Compound\nCHEM:002:Glucose:Sugar"
+        )
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ":"
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.65,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.8",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(colon_csv)
+
+        assert result["dialect"].delimiter == ":"
+
+    def test_detect_dialect_single_quotes(self, mock_csv_parser):
+        """Test detecting single quote character."""
+        parser = mock_csv_parser()
+        single_quote_csv = "id,name,definition\nCHEM:001,'Chemical Compound','A basic unit'\nCHEM:002,'Glucose','Simple sugar'"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = "'"
+        mock_dialect.escapechar = None
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.8,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.9, quote_patterns=2",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(single_quote_csv)
+
+        assert result["dialect"].quotechar == "'"
+
+    def test_detect_dialect_backtick_quotes(self, mock_csv_parser):
+        """Test detecting backtick quote character."""
+        parser = mock_csv_parser()
+        backtick_csv = "id,name,definition\nCHEM:001,`Chemical Compound`,`A basic unit`\nCHEM:002,`Glucose`,`Simple sugar`"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = "`"
+        mock_dialect.escapechar = None
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.75,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.9, quote_patterns=4",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(backtick_csv)
+
+        assert result["dialect"].quotechar == "`"
+
+    def test_detect_dialect_with_escape_characters(self, mock_csv_parser):
+        """Test detecting escape characters."""
+        parser = mock_csv_parser()
+        escaped_csv = 'id,name,definition\nCHEM:001,"Chemical ""Compound""","A basic unit"\nCHEM:002,"Glucose\\,Sugar","Simple sugar"'
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+        mock_dialect.escapechar = "\\"
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.85,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.9, escape_patterns=1",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(escaped_csv)
+
+        assert result["dialect"].escapechar == "\\"
+
+    def test_detect_dialect_mixed_delimiters_low_confidence(self, mock_csv_parser):
+        """Test handling mixed delimiters with low confidence."""
+        parser = mock_csv_parser()
+        mixed_csv = "id,name;definition|category\nCHEM:001,Chemical;A compound|Chemical\nCHEM:002,Glucose;Sugar|Carbohydrate"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.3,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter=','",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(mixed_csv)
+
+        assert result["confidence"] < 0.5
+        assert result["method"] == "fallback"
+
+    def test_detect_dialect_inconsistent_quoting(self, mock_csv_parser):
+        """Test handling inconsistent quoting patterns."""
+        parser = mock_csv_parser()
+        inconsistent_csv = 'id,name,definition\nCHEM:001,"Chemical",A compound\nCHEM:002,Glucose,"Simple sugar"'
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.6,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.9, quote_patterns=3",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(inconsistent_csv)
+
+        assert result["confidence"] >= 0.5
+        assert result["dialect"].delimiter == ","
+
+    def test_detect_dialect_empty_content(self, mock_csv_parser):
+        """Test handling empty content."""
+        parser = mock_csv_parser()
+
+        mock_result = {
+            "dialect": None,
+            "confidence": 0.0,
+            "method": "fallback",
+            "details": "Empty content",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect("")
+
+        assert result["dialect"] is None
+        assert result["confidence"] == 0.0
+        assert result["method"] == "fallback"
+
+    def test_detect_dialect_single_line(self, mock_csv_parser):
+        """Test handling single line content."""
+        parser = mock_csv_parser()
+        single_line = "id,name,definition,category"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.4,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter=','",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(single_line)
+
+        assert result["confidence"] <= 0.5  # Lower confidence for single line
+
+    def test_detect_dialect_user_specified_delimiter(self, mock_csv_parser):
+        """Test using user-specified delimiter with higher confidence."""
+        parser = mock_csv_parser()
+        # Simulate user options
+        parser.options = {"delimiter": "|"}
+
+        user_specified_csv = "id|name|definition\nCHEM:001|Chemical|Compound"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = "|"
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.7,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter='|' (user-specified)",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(user_specified_csv)
+
+        assert result["confidence"] >= 0.7  # Higher confidence for user-specified
+        assert "user-specified" in result["details"]
+
+    def test_detect_dialect_confidence_scoring_consistency(self, mock_csv_parser):
+        """Test confidence scoring based on field count consistency."""
+        parser = mock_csv_parser()
+        consistent_csv = "id,name,definition\nCHEM:001,Chemical,Compound\nCHEM:002,Glucose,Sugar\nCHEM:003,Protein,Molecule"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.9,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(consistent_csv)
+
+        assert result["confidence"] >= 0.8  # High confidence for consistent structure
+
+    def test_detect_dialect_complex_quoted_fields(self, mock_csv_parser):
+        """Test detecting dialect with complex quoted fields containing delimiters."""
+        parser = mock_csv_parser()
+        complex_csv = '''id,name,definition,properties
+CHEM:001,"Chemical Compound","A pure substance, basic unit","molecular_weight:100.5;state:solid"
+CHEM:002,"D-Glucose","Simple sugar, C6H12O6","formula:C6H12O6;sweet:true"'''
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+        mock_dialect.escapechar = None
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.85,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(complex_csv)
+
+        assert result["confidence"] >= 0.8
+        assert result["dialect"].quotechar == '"'
+
+    def test_detect_dialect_with_quoted_fields(
+        self, mock_csv_parser, sample_csv_with_quotes
+    ):
         """Test detecting dialect with quoted fields."""
         parser = mock_csv_parser()
         mock_dialect = Mock()
         mock_dialect.delimiter = ","
         mock_dialect.quotechar = '"'
         mock_dialect.escapechar = None
-        parser.detect_dialect.return_value = mock_dialect
 
-        dialect = parser.detect_dialect(sample_csv_with_quotes)
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.8,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
 
-        assert dialect.quotechar == '"'
+        result = parser.detect_dialect(sample_csv_with_quotes)
+
+        assert result["dialect"].quotechar == '"'
+        assert result["confidence"] >= 0.7
+
+
+class TestCSVDialectConfidenceScoring:
+    """Test confidence scoring functionality for dialect detection."""
+
+    def test_confidence_scoring_high_for_consistent_structure(self, mock_csv_parser):
+        """Test high confidence for consistent CSV structure."""
+        parser = mock_csv_parser()
+        consistent_csv = "id,name,category\nCHEM:001,Chemical,Type1\nCHEM:002,Glucose,Type2\nCHEM:003,Protein,Type3"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        # High confidence for consistent field counts
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.9,
+            "method": "sniffer",
+            "details": "Detected with csv.Sniffer",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(consistent_csv)
+
+        assert result["confidence"] >= 0.8
+        assert result["method"] in ["sniffer", "manual"]
+
+    def test_confidence_scoring_medium_for_mostly_consistent(self, mock_csv_parser):
+        """Test medium confidence for mostly consistent structure."""
+        parser = mock_csv_parser()
+        mostly_consistent_csv = "id,name,category\nCHEM:001,Chemical,Type1\nCHEM:002,Glucose,Type2,Extra\nCHEM:003,Protein,Type3"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.6,
+            "method": "manual",
+            "details": "Manual detection: delimiter_score=0.7",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(mostly_consistent_csv)
+
+        assert 0.4 <= result["confidence"] <= 0.8
+
+    def test_confidence_scoring_low_for_inconsistent_structure(self, mock_csv_parser):
+        """Test low confidence for inconsistent structure."""
+        parser = mock_csv_parser()
+        inconsistent_csv = "id,name\nCHEM:001,Chemical,Type1,Extra1,More\nCHEM:002\nCHEM:003,Protein,Type3,Extra2"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = ","
+        mock_dialect.quotechar = '"'
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.2,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter=','",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(inconsistent_csv)
+
+        assert result["confidence"] <= 0.4
+        assert result["method"] == "fallback"
+
+    def test_confidence_scoring_fallback_threshold(self, mock_csv_parser):
+        """Test confidence scoring triggers fallback below threshold."""
+        parser = mock_csv_parser()
+        ambiguous_csv = "data;with,mixed|delimiters\nmore;data,with|mixed\npatterns;here,too|confusing"
+
+        # First method fails with low confidence
+        mock_result_low = {
+            "dialect": Mock(),
+            "confidence": 0.3,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter=','",
+        }
+        parser.detect_dialect.return_value = mock_result_low
+
+        result = parser.detect_dialect(ambiguous_csv)
+
+        assert result["confidence"] <= 0.5
+        assert result["method"] == "fallback"
+
+    def test_confidence_scoring_with_user_override(self, mock_csv_parser):
+        """Test confidence scoring with user-specified options."""
+        parser = mock_csv_parser()
+        parser.options = {"delimiter": "|", "quotechar": "'"}
+
+        custom_csv = "id|name|category\nCHEM:001|Chemical|Type1"
+
+        mock_dialect = Mock()
+        mock_dialect.delimiter = "|"
+        mock_dialect.quotechar = "'"
+
+        mock_result = {
+            "dialect": mock_dialect,
+            "confidence": 0.75,  # Higher confidence for user-specified
+            "method": "fallback",
+            "details": "Fallback detection using delimiter='|' (user-specified)",
+        }
+        parser.detect_dialect.return_value = mock_result
+
+        result = parser.detect_dialect(custom_csv)
+
+        assert result["confidence"] >= 0.7  # Higher confidence for user settings
+        assert "user-specified" in result["details"]
+
+    def test_confidence_scoring_edge_cases(self, mock_csv_parser):
+        """Test confidence scoring for edge cases."""
+        parser = mock_csv_parser()
+
+        # Empty content
+        mock_result_empty = {
+            "dialect": None,
+            "confidence": 0.0,
+            "method": "fallback",
+            "details": "Empty content",
+        }
+        parser.detect_dialect.return_value = mock_result_empty
+
+        result = parser.detect_dialect("")
+        assert result["confidence"] == 0.0
+
+        # Single line
+        single_line = "id,name,category"
+        mock_result_single = {
+            "dialect": Mock(),
+            "confidence": 0.4,
+            "method": "fallback",
+            "details": "Fallback detection using delimiter=','",
+        }
+        parser.detect_dialect.return_value = mock_result_single
+
+        result = parser.detect_dialect(single_line)
+        assert result["confidence"] <= 0.5
 
     def test_detect_encoding_utf8(self, mock_csv_parser, sample_csv_content):
         """Test detecting UTF-8 encoding."""

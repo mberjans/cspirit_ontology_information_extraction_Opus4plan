@@ -2497,8 +2497,18 @@ class CSVParser(AbstractParser):
 
             # Detect dialect and format
             detected_format = self.detect_format(content)
-            dialect = self.detect_dialect(content)
+            dialect_result = self.detect_dialect(content)
+            dialect = dialect_result["dialect"]
             self._detected_dialect = dialect
+
+            # Store dialect detection metadata
+            metadata.update(
+                {
+                    "dialect_confidence": dialect_result["confidence"],
+                    "dialect_method": dialect_result["method"],
+                    "dialect_details": dialect_result["details"],
+                }
+            )
 
             # Detect headers
             has_headers = self.options.get("has_headers")
@@ -2679,39 +2689,298 @@ class CSVParser(AbstractParser):
         else:
             return "csv"  # Default
 
-    def detect_dialect(self, content: str) -> Any:
-        """Detect CSV dialect using csv.Sniffer."""
+    def detect_dialect(self, content: str) -> Dict[str, Any]:
+        """
+        Enhanced CSV dialect detection with confidence scoring and robust fallback mechanisms.
+
+        This method provides comprehensive dialect detection for CSV files including:
+        - Enhanced delimiter detection (comma, tab, semicolon, pipe, space, and custom)
+        - Quote character detection (double quotes, single quotes, backticks)
+        - Escape character detection
+        - Confidence scoring for detection results
+        - Robust fallback mechanisms when csv.Sniffer fails
+
+        Args:
+            content (str): CSV content to analyze
+
+        Returns:
+            Dict[str, Any]: Dictionary containing:
+                - dialect: The detected dialect object
+                - confidence: Confidence score (0.0 to 1.0)
+                - method: Detection method used ('sniffer', 'manual', 'fallback')
+                - details: Additional detection information
+        """
         if not content:
-            return None
+            return self._create_dialect_result(None, 0.0, "fallback", "Empty content")
 
+        # Enhanced sample size for better detection
+        sample_size = min(8192, len(content))  # Increased from 1024
+        sample = content[:sample_size]
+
+        # Try csv.Sniffer first with enhanced delimiters
+        sniffer_result = self._try_csv_sniffer(sample)
+        if sniffer_result["confidence"] > 0.6:  # High confidence threshold
+            return sniffer_result
+
+        # Manual pattern analysis for difficult cases
+        manual_result = self._manual_dialect_detection(sample)
+        if manual_result["confidence"] > 0.4:  # Medium confidence threshold
+            return manual_result
+
+        # Robust fallback mechanism
+        fallback_result = self._fallback_dialect_detection(sample)
+
+        # Log the detection process
+        self.logger.info(
+            f"Dialect detection completed: method={fallback_result['method']}, "
+            f"confidence={fallback_result['confidence']:.2f}, "
+            f"delimiter='{fallback_result['dialect'].delimiter}'"
+        )
+
+        return fallback_result
+
+    def _try_csv_sniffer(self, sample: str) -> Dict[str, Any]:
+        """Try using csv.Sniffer for dialect detection."""
         try:
-            # Use first 1024 characters for dialect detection
-            sample = content[:1024] if len(content) > 1024 else content
-
+            # Extended delimiter list including more options
+            delimiters = ",\t|;: \u00A0"  # Added colon, space, and non-breaking space
             sniffer = self._csv.Sniffer()
-            dialect = sniffer.sniff(sample, delimiters=",\t|;")
 
-            # Store dialect info
+            # Try to sniff the dialect
+            dialect = sniffer.sniff(sample, delimiters=delimiters)
+
+            # Calculate confidence based on consistency and pattern strength
+            confidence = self._calculate_sniffer_confidence(sample, dialect)
+
             self.logger.debug(
-                f"Detected dialect: delimiter='{dialect.delimiter}', "
-                f"quotechar='{dialect.quotechar}', escapechar='{dialect.escapechar}'"
+                f"csv.Sniffer detected: delimiter='{dialect.delimiter}', "
+                f"quotechar='{dialect.quotechar}', escapechar='{dialect.escapechar}', "
+                f"confidence={confidence:.2f}"
             )
 
-            return dialect
+            return self._create_dialect_result(
+                dialect, confidence, "sniffer", f"Detected with csv.Sniffer"
+            )
 
         except Exception as e:
-            self.logger.warning(f"Dialect detection failed: {str(e)}, using defaults")
+            self.logger.debug(f"csv.Sniffer failed: {str(e)}")
+            return self._create_dialect_result(None, 0.0, "sniffer_failed", str(e))
 
-            # Return default dialect
-            class DefaultDialect:
-                delimiter = self.options.get("delimiter", ",")
-                quotechar = self.options.get("quotechar", '"')
-                escapechar = self.options.get("escapechar")
-                skipinitialspace = False
-                doublequote = True
-                quoting = self._csv.QUOTE_MINIMAL
+    def _manual_dialect_detection(self, sample: str) -> Dict[str, Any]:
+        """Manual pattern-based dialect detection for difficult cases."""
+        lines = sample.split("\n")[:10]  # Analyze first 10 lines
 
-            return DefaultDialect()
+        if len(lines) < 2:
+            return self._create_dialect_result(
+                None, 0.0, "manual", "Insufficient lines"
+            )
+
+        # Enhanced delimiter detection with scoring
+        delimiter_candidates = {
+            ",": 0.0,
+            "\t": 0.0,
+            "|": 0.0,
+            ";": 0.0,
+            ":": 0.0,
+            " ": 0.0,
+            "\u00A0": 0.0,  # Added more delimiters
+        }
+
+        # Count delimiter occurrences and consistency
+        for line in lines:
+            if not line.strip():
+                continue
+            for delimiter in delimiter_candidates:
+                count = line.count(delimiter)
+                if count > 0:
+                    delimiter_candidates[delimiter] += count
+
+        # Find most consistent delimiter
+        best_delimiter = ","
+        best_score = 0.0
+
+        for delimiter, total_count in delimiter_candidates.items():
+            if total_count == 0:
+                continue
+
+            # Calculate consistency score
+            field_counts = []
+            for line in lines:
+                if line.strip():
+                    field_counts.append(line.count(delimiter) + 1)
+
+            if not field_counts:
+                continue
+
+            # Consistency is measured by how uniform field counts are
+            if len(set(field_counts)) == 1 and field_counts[0] > 1:
+                consistency = 1.0
+            else:
+                avg_fields = sum(field_counts) / len(field_counts)
+                variance = sum((x - avg_fields) ** 2 for x in field_counts) / len(
+                    field_counts
+                )
+                consistency = max(
+                    0.0, 1.0 - (variance / avg_fields) if avg_fields > 0 else 0.0
+                )
+
+            score = consistency * (total_count / len(lines))
+
+            if score > best_score:
+                best_score = score
+                best_delimiter = delimiter
+
+        # Enhanced quote character detection
+        quote_chars = ['"', "'", "`"]  # Added backtick
+        best_quote = '"'
+        quote_confidence = 0.0
+
+        for quote_char in quote_chars:
+            quote_patterns = 0
+            for line in lines:
+                # Look for quoted fields pattern
+                if self._re.search(
+                    rf"{self._re.escape(quote_char)}[^{self._re.escape(quote_char)}]*{self._re.escape(quote_char)}",
+                    line,
+                ):
+                    quote_patterns += 1
+
+            if quote_patterns > quote_confidence:
+                quote_confidence = quote_patterns
+                best_quote = quote_char
+
+        # Enhanced escape character detection
+        escape_char = None
+        escape_confidence = 0.0
+
+        for line in lines:
+            # Look for common escape patterns
+            if "\\" in line:
+                escape_patterns = line.count("\\")
+                if escape_patterns > escape_confidence:
+                    escape_confidence = escape_patterns
+                    escape_char = "\\"
+
+        # Create custom dialect
+        class ManualDialect:
+            def __init__(self, delimiter, quotechar, escapechar):
+                import csv
+
+                self.delimiter = delimiter
+                self.quotechar = quotechar
+                self.escapechar = escapechar
+                self.skipinitialspace = False
+                self.doublequote = True
+                self.quoting = csv.QUOTE_MINIMAL
+
+        dialect = ManualDialect(best_delimiter, best_quote, escape_char)
+
+        # Calculate overall confidence
+        confidence = min(1.0, best_score + (quote_confidence / len(lines)) * 0.1)
+
+        details = (
+            f"Manual detection: delimiter_score={best_score:.2f}, "
+            f"quote_patterns={quote_confidence}, escape_patterns={escape_confidence}"
+        )
+
+        self.logger.debug(f"Manual detection: {details}")
+
+        return self._create_dialect_result(dialect, confidence, "manual", details)
+
+    def _fallback_dialect_detection(self, sample: str) -> Dict[str, Any]:
+        """Robust fallback mechanism when other detection methods fail."""
+        # Analyze sample to make educated guesses
+        lines = sample.split("\n")[:5]
+
+        # Simple heuristics for common cases
+        delimiter = ","
+        confidence = 0.3  # Base fallback confidence
+
+        # Check for obvious TSV pattern
+        if any("\t" in line and "," not in line for line in lines):
+            delimiter = "\t"
+            confidence = 0.5
+
+        # Check for pipe-separated values
+        elif any("|" in line and "," not in line for line in lines):
+            delimiter = "|"
+            confidence = 0.5
+
+        # Check for semicolon-separated (common in European locales)
+        elif any(";" in line and "," not in line for line in lines):
+            delimiter = ";"
+            confidence = 0.4
+
+        # Use user-specified options if available
+        user_delimiter = self.options.get("delimiter")
+        if user_delimiter:
+            delimiter = user_delimiter
+            confidence = 0.7  # Higher confidence for user-specified
+
+        # Create fallback dialect
+        class FallbackDialect:
+            def __init__(self, delimiter, parser_options):
+                import csv
+
+                self.delimiter = delimiter
+                self.quotechar = parser_options.get("quotechar", '"')
+                self.escapechar = parser_options.get("escapechar")
+                self.skipinitialspace = False
+                self.doublequote = True
+                self.quoting = csv.QUOTE_MINIMAL
+
+        dialect = FallbackDialect(delimiter, self.options)
+
+        details = f"Fallback detection using delimiter='{delimiter}'"
+        if user_delimiter:
+            details += " (user-specified)"
+
+        self.logger.warning(f"Using fallback dialect detection: {details}")
+
+        return self._create_dialect_result(dialect, confidence, "fallback", details)
+
+    def _calculate_sniffer_confidence(self, sample: str, dialect) -> float:
+        """Calculate confidence score for csv.Sniffer results."""
+        lines = sample.split("\n")[:10]
+        valid_lines = [line for line in lines if line.strip()]
+
+        if len(valid_lines) < 2:
+            return 0.5  # Low confidence for insufficient data
+
+        # Test consistency of field counts
+        field_counts = []
+        for line in valid_lines:
+            try:
+                # Use the detected dialect to parse the line
+                reader = self._csv.reader([line], dialect=dialect)
+                row = next(reader)
+                field_counts.append(len(row))
+            except Exception:  # nosec B112
+                continue
+
+        if not field_counts:
+            return 0.3
+
+        # High confidence if field counts are consistent
+        if len(set(field_counts)) == 1:
+            return 0.9
+
+        # Medium confidence if mostly consistent
+        most_common_count = max(set(field_counts), key=field_counts.count)
+        consistency_ratio = field_counts.count(most_common_count) / len(field_counts)
+
+        return max(0.3, min(0.9, consistency_ratio))
+
+    def _create_dialect_result(
+        self, dialect, confidence: float, method: str, details: str
+    ) -> Dict[str, Any]:
+        """Create a standardized dialect detection result."""
+        return {
+            "dialect": dialect,
+            "confidence": confidence,
+            "method": method,
+            "details": details,
+        }
 
     def detect_encoding(self, content: bytes) -> str:
         """Detect file encoding."""
@@ -2780,7 +3049,11 @@ class CSVParser(AbstractParser):
 
         try:
             # Use detected dialect or default
-            dialect = self._detected_dialect or self.detect_dialect(content)
+            if self._detected_dialect:
+                dialect = self._detected_dialect
+            else:
+                dialect_result = self.detect_dialect(content)
+                dialect = dialect_result["dialect"]
 
             csv_input = self._io.StringIO(content)
             reader = self._csv.reader(csv_input, dialect=dialect)
@@ -3258,7 +3531,8 @@ class CSVParser(AbstractParser):
 
             # Try to parse structure
             try:
-                dialect = self.detect_dialect(content)
+                dialect_result = self.detect_dialect(content)
+                dialect = dialect_result["dialect"]
                 headers = self.get_headers(content)
 
                 if headers:
