@@ -50,25 +50,20 @@ class EnhancedCacheError(Exception):
     """Base exception for enhanced cache operations."""
 
 
-
 class CompressionError(EnhancedCacheError):
     """Exception raised when compression/decompression fails."""
-
 
 
 class MemoryAllocationError(EnhancedCacheError):
     """Exception raised when memory allocation fails."""
 
 
-
 class EvictionPolicyError(EnhancedCacheError):
     """Exception raised when eviction policy operations fail."""
 
 
-
 class CacheConfigurationError(EnhancedCacheError):
     """Exception raised when cache configuration is invalid."""
-
 
 
 class CompressionType(Enum):

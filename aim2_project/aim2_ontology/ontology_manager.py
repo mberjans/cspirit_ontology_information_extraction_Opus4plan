@@ -30,10 +30,12 @@ try:
     from ..aim2_utils.config_manager import ConfigManager
     from .models import Ontology
     from .parsers import auto_detect_parser
+    from .validators import ValidationPipeline
 except ImportError:
     # For development/testing scenarios
     from models import Ontology
     from parsers import auto_detect_parser
+    from validators import ValidationPipeline
 
     try:
         from aim2_project.aim2_utils.config_manager import ConfigManager
@@ -112,6 +114,9 @@ class OntologyManager:
             "fastest_load_time": None,
             "slowest_load_time": None,
         }
+
+        # Validation pipeline
+        self.validation_pipeline = ValidationPipeline()
 
     def load_ontology(self, source: Union[str, Path]) -> LoadResult:
         """Load a single ontology with format auto-detection.
@@ -1827,6 +1832,162 @@ class OntologyManager:
         if source_path:
             return self.source_stats.get(source_path, {})
         return dict(self.source_stats)
+
+    def validate_ontology(self, ontology_id: str) -> Dict[str, Any]:
+        """Validate a specific ontology using the validation pipeline.
+
+        Args:
+            ontology_id: ID of the ontology to validate
+
+        Returns:
+            Dict[str, Any]: Validation results
+
+        Raises:
+            OntologyManagerError: If ontology not found
+        """
+        ontology = self.get_ontology(ontology_id)
+        if not ontology:
+            raise OntologyManagerError(f"Ontology '{ontology_id}' not found")
+
+        try:
+            validation_result = self.validation_pipeline.validate_ontology(ontology)
+
+            # Update ontology validation status
+            if hasattr(ontology, "is_consistent"):
+                ontology.is_consistent = validation_result["is_valid"]
+
+            if hasattr(ontology, "validation_errors"):
+                ontology.validation_errors = validation_result["errors"]
+
+            self.logger.info(
+                f"Validated ontology '{ontology_id}': "
+                f"{'PASSED' if validation_result['is_valid'] else 'FAILED'} "
+                f"({validation_result['summary']['total_errors']} errors, "
+                f"{validation_result['summary']['total_warnings']} warnings)"
+            )
+
+            return validation_result
+
+        except Exception as e:
+            error_msg = f"Failed to validate ontology '{ontology_id}': {str(e)}"
+            self.logger.exception(error_msg)
+            raise OntologyManagerError(error_msg)
+
+    def validate_all_ontologies(self) -> Dict[str, Dict[str, Any]]:
+        """Validate all loaded ontologies.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Validation results for each ontology
+        """
+        results = {}
+
+        for ontology_id in self.list_ontologies():
+            try:
+                results[ontology_id] = self.validate_ontology(ontology_id)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to validate ontology '{ontology_id}': {str(e)}"
+                )
+                results[ontology_id] = {
+                    "is_valid": False,
+                    "errors": [f"Validation failed: {str(e)}"],
+                    "warnings": [],
+                    "validator_results": {},
+                    "summary": {
+                        "total_validators": 0,
+                        "passed_validators": 0,
+                        "failed_validators": 0,
+                        "total_errors": 1,
+                        "total_warnings": 0,
+                    },
+                }
+
+        return results
+
+    def get_validation_summary(self) -> Dict[str, Any]:
+        """Get a summary of validation results for all ontologies.
+
+        Returns:
+            Dict[str, Any]: Summary of validation results
+        """
+        if not self.ontologies:
+            return {
+                "total_ontologies": 0,
+                "valid_ontologies": 0,
+                "invalid_ontologies": 0,
+                "total_errors": 0,
+                "total_warnings": 0,
+                "validation_rate": 0.0,
+            }
+
+        validation_results = self.validate_all_ontologies()
+
+        total_ontologies = len(validation_results)
+        valid_ontologies = sum(
+            1 for result in validation_results.values() if result["is_valid"]
+        )
+        invalid_ontologies = total_ontologies - valid_ontologies
+        total_errors = sum(
+            result["summary"]["total_errors"] for result in validation_results.values()
+        )
+        total_warnings = sum(
+            result["summary"]["total_warnings"]
+            for result in validation_results.values()
+        )
+        validation_rate = (
+            valid_ontologies / total_ontologies if total_ontologies > 0 else 0.0
+        )
+
+        return {
+            "total_ontologies": total_ontologies,
+            "valid_ontologies": valid_ontologies,
+            "invalid_ontologies": invalid_ontologies,
+            "total_errors": total_errors,
+            "total_warnings": total_warnings,
+            "validation_rate": validation_rate,
+            "detailed_results": validation_results,
+        }
+
+    def add_validation_check(self, validator) -> None:
+        """Add a custom validator to the validation pipeline.
+
+        Args:
+            validator: The validator to add (must inherit from OntologyValidator)
+
+        Raises:
+            OntologyManagerError: If validator is invalid
+        """
+        try:
+            self.validation_pipeline.add_validator(validator)
+            self.logger.info(f"Added custom validator: {validator.name}")
+        except Exception as e:
+            error_msg = f"Failed to add validator: {str(e)}"
+            self.logger.error(error_msg)
+            raise OntologyManagerError(error_msg)
+
+    def remove_validation_check(self, validator_name: str) -> bool:
+        """Remove a validator from the validation pipeline.
+
+        Args:
+            validator_name: Name of the validator to remove
+
+        Returns:
+            bool: True if validator was removed, False if not found
+        """
+        removed = self.validation_pipeline.remove_validator(validator_name)
+        if removed:
+            self.logger.info(f"Removed validator: {validator_name}")
+        else:
+            self.logger.warning(f"Validator not found: {validator_name}")
+        return removed
+
+    def list_validators(self) -> List[str]:
+        """Get list of active validators.
+
+        Returns:
+            List[str]: List of validator names
+        """
+        return self.validation_pipeline.list_validators()
 
 
 def main():

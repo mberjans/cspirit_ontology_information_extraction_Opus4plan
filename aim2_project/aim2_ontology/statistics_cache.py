@@ -52,20 +52,16 @@ class StatisticsCacheError(EnhancedCacheError):
     """Base exception for statistics cache operations."""
 
 
-
 class StatisticsTypeError(StatisticsCacheError):
     """Exception raised when statistics type is invalid or unsupported."""
-
 
 
 class StatisticsDependencyError(StatisticsCacheError):
     """Exception raised when dependency tracking fails."""
 
 
-
 class StatisticsInvalidationError(StatisticsCacheError):
     """Exception raised when cache invalidation fails."""
-
 
 
 class StatisticsType(Enum):

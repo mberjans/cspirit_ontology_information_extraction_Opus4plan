@@ -98,10 +98,10 @@
 - [x] **AIM2-013-09** Add export functionality
 - [x] **AIM2-013-10** Create merge operations
 - [x] **AIM2-013-11** Implement subset extraction
-- [ ] **AIM2-013-12** Add validation checks
-- [ ] **AIM2-013-13** Run manager unit tests
-- [ ] **AIM2-031-01** Write unit tests for PDF parser
-- [ ] **AIM2-031-02** Write unit tests for XML parser
+- [x] **AIM2-013-12** Add validation checks
+- [x] **AIM2-013-13** Run manager unit tests
+- [x] **AIM2-031-01** Write unit tests for PDF parser
+- [x] **AIM2-031-02** Write unit tests for XML parser
 - [ ] **AIM2-031-03** Write unit tests for text extraction
 - [ ] **AIM2-031-04** Create AbstractDocumentParser
 - [ ] **AIM2-031-05** Implement PDF text extraction
