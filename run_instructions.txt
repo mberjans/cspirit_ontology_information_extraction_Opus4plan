@@ -5,7 +5,7 @@ IMPORTANT: Before creating any new code, always check the existing codebase thor
 For unchecked tasks on the checklists, write the program one task of one ticket at a time. Once task is finshed, check it on the docs/checklist.md, add all changed files to the git using a separate git add command, commit changes with commit message that you generate yourself using individual git commit command, push changes to the git repository with indvidual git push command, and switch to the next task. Once you complete tasks on one ticket, add all changed files to the git using a separate git add command, commit changes with commit message that you generate yourself using individual git commit command, push changes to the git repository with indvidual git push command, switch to the next ticket. After the push, update the momety bank if it exists. Never chain multiple shell command together with & sign. Never use list comprehension in python. Avoid using regular expression for pattern matching. Instead create special pattern matching function to pattern matching. Work until all bugs are fixed. Please do not ask me for conformation whether I want you to proceedto the next ticket. Just keep working until completing the last ticket.
 
 CURRENT TASK TO COMPLETE:
-**AIM2-012-03** Write unit tests for JSON-LD parser
+**AIM2-012-05** Implement OWL file parser
 
 CONTEXT:
 - Project directory: /Users/Mark/Research/C-Spirit/cspirit_ontology_information_extraction_Opus4plan
@@ -13,25 +13,25 @@ CONTEXT:
 - Focus on completing the current task above
 - IMPORTANT: After completing the task, update docs/checklist.md to mark the task as complete by changing [ ] to [x]
 
-REMAINING UNCHECKED TASKS (461 total):
-→ CURRENT **AIM2-012-03** Write unit tests for JSON-LD parser
-  2. **AIM2-012-04** Create AbstractParser base class
-  3. **AIM2-012-05** Implement OWL file parser
-  4. **AIM2-012-06** Add RDF triple extraction
-  5. **AIM2-012-07** Implement CSV parser with headers
-  6. **AIM2-012-08** Add CSV dialect detection
-  7. **AIM2-012-09** Create JSON-LD parser
-  8. **AIM2-012-10** Implement error recovery logic
-  9. **AIM2-012-11** Add progress reporting
-  10. **AIM2-012-12** Create format auto-detection
-  ... and 451 more tasks
+REMAINING UNCHECKED TASKS (459 total):
+→ CURRENT **AIM2-012-05** Implement OWL file parser
+  2. **AIM2-012-06** Add RDF triple extraction
+  3. **AIM2-012-07** Implement CSV parser with headers
+  4. **AIM2-012-08** Add CSV dialect detection
+  5. **AIM2-012-09** Create JSON-LD parser
+  6. **AIM2-012-10** Implement error recovery logic
+  7. **AIM2-012-11** Add progress reporting
+  8. **AIM2-012-12** Create format auto-detection
+  9. **AIM2-012-13** Run all parser unit tests
+  10. **AIM2-013-01** Write unit tests for loading logic
+  ... and 449 more tasks
 
 CRITICAL INSTRUCTIONS:
 1. Read docs/checklist.md, docs/plan.md, and docs/tickets.md for context
-2. Focus ONLY on completing the current task: **AIM2-012-03** Write unit tests for JSON-LD parser
-3. Think 
+2. Focus ONLY on completing the current task: **AIM2-012-05** Implement OWL file parser
+3. Think
 4. Create to-do list of smaller subtasks
-5. Assign task to software-engeneer subagent. Give subagent only information it needs for the task. You can also give subagent ticket-specific information extracted from docs/tickets.md as well as task specific information extracted from docs/checklist.md 
+5. Assign task to software-engeneer subagent. Give subagent only information it needs for the task. You can also give subagent ticket-specific information extracted from docs/tickets.md as well as task specific information extracted from docs/checklist.md
 6. Ask software-engeneer subagent to design unit tests for the subtask if appropriate
 7. Ask software-engeneer subagent to implement the code for the subtask
 8. Ask software-engeneer subagent to refactor the code for the subtask if necessary
@@ -42,7 +42,7 @@ CRITICAL INSTRUCTIONS:
 10c. For the forth attempt  to do sub-task, add the following to  software-engeneer subagent prompt: "Think hardest about this task. This is a critical retry - analyze what went wrong in previous attempts and implement a robust solution."
 10d. For the fifth attempt  to do sub-task, add the following to  software-engeneer subagent prompt: "Ultrathink this task. This is the final attempt before marking as failed. Use maximum creativity and problem-solving skills."
 10e. If software-engeneer subagent reports success, add all changed files to git: git add [files], then commit changes: git commit -m "descriptive message" and then push changes: git push
-10f. If software-engeneer subagent reports failure on the fifth attempt, mark the sub-task as failed and move on to the next sub-task. 
+10f. If software-engeneer subagent reports failure on the fifth attempt, mark the sub-task as failed and move on to the next sub-task.
 11. Repeat steps 5-12 for each subtask
 12. Use the code-reviewer sub-agent to review the new code for quality and security
 13. Test your implementation for the whole task if applicable
