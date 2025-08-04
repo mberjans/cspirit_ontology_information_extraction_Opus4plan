@@ -89,7 +89,7 @@
 - [x] **AIM2-012-13** Run all parser unit tests
 - [x] **AIM2-013-01** Write unit tests for loading logic
 - [x] **AIM2-013-02** Write unit tests for caching
-- [ ] **AIM2-013-03** Write unit tests for statistics
+- [x] **AIM2-013-03** Write unit tests for statistics
 - [ ] **AIM2-013-04** Create OntologyManager class
 - [ ] **AIM2-013-05** Implement ontology loading
 - [ ] **AIM2-013-06** Add multi-source support
