@@ -92,7 +92,7 @@
 - [x] **AIM2-013-03** Write unit tests for statistics
 - [x] **AIM2-013-04** Create OntologyManager class
 - [x] **AIM2-013-05** Implement ontology loading
-- [ ] **AIM2-013-06** Add multi-source support
+- [x] **AIM2-013-06** Add multi-source support
 - [ ] **AIM2-013-07** Create caching mechanism
 - [ ] **AIM2-013-08** Implement statistics calculator
 - [ ] **AIM2-013-09** Add export functionality
