@@ -102,7 +102,7 @@
 - [x] **AIM2-013-13** Run manager unit tests
 - [x] **AIM2-031-01** Write unit tests for PDF parser
 - [x] **AIM2-031-02** Write unit tests for XML parser
-- [ ] **AIM2-031-03** Write unit tests for text extraction
+- [x] **AIM2-031-03** Write unit tests for text extraction
 - [ ] **AIM2-031-04** Create AbstractDocumentParser
 - [ ] **AIM2-031-05** Implement PDF text extraction
 - [ ] **AIM2-031-06** Add PDF metadata extraction
