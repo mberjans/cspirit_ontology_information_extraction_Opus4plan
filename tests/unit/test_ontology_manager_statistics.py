@@ -52,7 +52,6 @@ Key Design Principles:
 """
 
 import tempfile
-import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -241,7 +240,7 @@ class TestOntologyManagerStatistics:
             "total_terms",
             "total_relationships",
         }
-        
+
         # New multi-source statistics keys
         multisource_keys = {
             "sources_loaded",
@@ -252,18 +251,24 @@ class TestOntologyManagerStatistics:
             "overlap_analysis",
             "performance",
         }
-        
+
         all_expected_keys = required_keys | multisource_keys
         actual_keys = set(stats.keys())
-        
+
         # Check that all required keys are present
-        assert required_keys.issubset(actual_keys), f"Missing required keys: {required_keys - actual_keys}"
-        
+        assert required_keys.issubset(
+            actual_keys
+        ), f"Missing required keys: {required_keys - actual_keys}"
+
         # Check that all multisource keys are present
-        assert multisource_keys.issubset(actual_keys), f"Missing multisource keys: {multisource_keys - actual_keys}"
-        
+        assert multisource_keys.issubset(
+            actual_keys
+        ), f"Missing multisource keys: {multisource_keys - actual_keys}"
+
         # Verify no unexpected keys (allow for future extensions)
-        assert actual_keys <= all_expected_keys, f"Unexpected keys: {actual_keys - all_expected_keys}"
+        assert (
+            actual_keys <= all_expected_keys
+        ), f"Unexpected keys: {actual_keys - all_expected_keys}"
 
     def test_statistics_disabled_caching(self, ontology_manager_no_cache):
         """Test statistics with caching disabled."""
@@ -336,13 +341,19 @@ class TestOntologyManagerStatistics:
 
                 stats = ontology_manager.get_statistics()
                 assert stats["total_loads"] == 2
-                assert stats["successful_loads"] == 1  # Only one actual successful load (cache hit doesn't count)
+                assert (
+                    stats["successful_loads"] == 1
+                )  # Only one actual successful load (cache hit doesn't count)
                 assert stats["failed_loads"] == 0
                 assert stats["cache_hits"] == 1
                 assert stats["cache_misses"] == 1
-                assert stats["formats_loaded"]["owl"] == 1  # Format count shouldn't change on cache hit
+                assert (
+                    stats["formats_loaded"]["owl"] == 1
+                )  # Format count shouldn't change on cache hit
                 assert stats["cache_size"] == 1
-                assert stats["loaded_ontologies"] == 1  # Same ontology, so count stays same
+                assert (
+                    stats["loaded_ontologies"] == 1
+                )  # Same ontology, so count stays same
                 assert stats["total_terms"] == 2
                 assert stats["total_relationships"] == 1
 
@@ -371,7 +382,9 @@ class TestOntologyManagerStatistics:
                 assert stats["successful_loads"] == 0
                 assert stats["failed_loads"] == 1
                 assert stats["cache_hits"] == 0
-                assert stats["cache_misses"] == 1  # Cache miss is counted even when parser detection fails
+                assert (
+                    stats["cache_misses"] == 1
+                )  # Cache miss is counted even when parser detection fails
                 assert stats["formats_loaded"] == {}
                 assert stats["cache_size"] == 0
                 assert stats["loaded_ontologies"] == 0
@@ -443,7 +456,9 @@ class TestOntologyManagerStatistics:
 
                 # Mock parser selection based on file extension
                 def get_parser(*args, **kwargs):
-                    file_path = str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    file_path = (
+                        str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    )
                     if file_path.endswith(".owl"):
                         return create_parser("owl", sample_ontology_small)
                     elif file_path.endswith(".rdf"):
@@ -484,7 +499,9 @@ class TestOntologyManagerStatistics:
 
                 stats = ontology_manager.get_statistics()
                 assert stats["total_loads"] == 3
-                assert stats["successful_loads"] == 2  # Two successful parses, third is cache hit
+                assert (
+                    stats["successful_loads"] == 2
+                )  # Two successful parses, third is cache hit
                 assert stats["cache_hits"] == 1
                 assert stats["formats_loaded"]["owl"] == 1  # No change on cache hit
                 assert stats["formats_loaded"]["rdf"] == 1
@@ -547,7 +564,7 @@ class TestOntologyManagerStatistics:
             # Create test files
             files = []
             ontologies = [sample_ontology_small, sample_ontology_large, empty_ontology]
-            
+
             for i, ont in enumerate(ontologies):
                 file_path = Path(tmp_dir) / f"eviction_test_{i}.owl"
                 file_path.write_text("<?xml version='1.0'?><rdf:RDF></rdf:RDF>")
@@ -558,7 +575,9 @@ class TestOntologyManagerStatistics:
             ) as mock_auto_detect:
 
                 def get_parser(*args, **kwargs):
-                    file_path = str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    file_path = (
+                        str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    )
                     for i, expected_file in enumerate(files):
                         if expected_file in file_path:
                             parser = Mock()
@@ -657,7 +676,9 @@ class TestOntologyManagerStatistics:
 
                 # Load statistics should remain unchanged
                 assert stats_after["total_loads"] == stats_before["total_loads"]
-                assert stats_after["successful_loads"] == stats_before["successful_loads"]
+                assert (
+                    stats_after["successful_loads"] == stats_before["successful_loads"]
+                )
                 assert stats_after["failed_loads"] == stats_before["failed_loads"]
                 assert stats_after["cache_hits"] == stats_before["cache_hits"]
                 assert stats_after["cache_misses"] == stats_before["cache_misses"]
@@ -703,11 +724,15 @@ class TestOntologyManagerStatistics:
 
                 stats_after = ontology_manager.get_statistics()
                 assert stats_after["cache_size"] == 0
-                assert stats_after["loaded_ontologies"] == 1  # Ontologies still loaded in manager
+                assert (
+                    stats_after["loaded_ontologies"] == 1
+                )  # Ontologies still loaded in manager
 
                 # Load statistics should remain unchanged
                 assert stats_after["total_loads"] == stats_before["total_loads"]
-                assert stats_after["successful_loads"] == stats_before["successful_loads"]
+                assert (
+                    stats_after["successful_loads"] == stats_before["successful_loads"]
+                )
                 assert stats_after["cache_hits"] == stats_before["cache_hits"]
                 assert stats_after["cache_misses"] == stats_before["cache_misses"]
 
@@ -730,7 +755,9 @@ class TestOntologyManagerStatistics:
             ) as mock_auto_detect:
 
                 def get_parser(*args, **kwargs):
-                    file_path = str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    file_path = (
+                        str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    )
                     if "success.owl" in file_path:
                         parser = Mock()
                         parser.format_name = "owl"
@@ -777,11 +804,17 @@ class TestOntologyManagerStatistics:
 
                 stats = ontology_manager.get_statistics()
                 assert stats["total_loads"] == 4
-                assert stats["successful_loads"] == 1  # Only one actual successful parse (cache hit doesn't count)
+                assert (
+                    stats["successful_loads"] == 1
+                )  # Only one actual successful parse (cache hit doesn't count)
                 assert stats["failed_loads"] == 2
                 assert stats["cache_hits"] == 1
-                assert stats["cache_misses"] == 3  # success:1, failure:1, success:cache_hit, failure:1 (failures not cached)
-                assert stats["formats_loaded"]["owl"] == 1  # Only successful loads count
+                assert (
+                    stats["cache_misses"] == 3
+                )  # success:1, failure:1, success:cache_hit, failure:1 (failures not cached)
+                assert (
+                    stats["formats_loaded"]["owl"] == 1
+                )  # Only successful loads count
                 assert stats["loaded_ontologies"] == 1
                 assert stats["total_terms"] == 2
                 assert stats["total_relationships"] == 1
@@ -826,11 +859,15 @@ class TestOntologyManagerStatistics:
                 assert stats["successful_loads"] == 3
                 assert stats["failed_loads"] == 0
                 assert stats["cache_hits"] == 0  # No caching
-                assert stats["cache_misses"] == 3  # Cache misses tracked for statistics when disabled
+                assert (
+                    stats["cache_misses"] == 3
+                )  # Cache misses tracked for statistics when disabled
                 assert stats["formats_loaded"]["owl"] == 3  # Each load counts
                 assert stats["cache_size"] == 0
                 assert stats["cache_enabled"] is False
-                assert stats["loaded_ontologies"] == 1  # Same ontology loaded multiple times
+                assert (
+                    stats["loaded_ontologies"] == 1
+                )  # Same ontology loaded multiple times
                 assert stats["total_terms"] == 2
                 assert stats["total_relationships"] == 1
 
@@ -902,11 +939,11 @@ class TestOntologyManagerStatistics:
                 # Perform various operations
                 ontology_manager.load_ontology(file_path)  # Success + cache miss
                 ontology_manager.load_ontology(file_path)  # Success + cache hit
-                
+
                 # Test failure by mocking parser to return None for nonexistent file
                 with patch(
                     "aim2_project.aim2_ontology.ontology_manager.auto_detect_parser",
-                    return_value=None
+                    return_value=None,
                 ):
                     ontology_manager.load_ontology("nonexistent.owl")  # Failure
 
@@ -916,10 +953,14 @@ class TestOntologyManagerStatistics:
                 # Note: successful_loads only counts actual parsing, not cache hits
                 # So successful_loads + failed_loads may be less than total_loads due to cache hits
                 assert (
-                    stats["successful_loads"] + stats["failed_loads"] + stats["cache_hits"]
+                    stats["successful_loads"]
+                    + stats["failed_loads"]
+                    + stats["cache_hits"]
                     == stats["total_loads"]
                 )
-                assert stats["cache_hits"] + stats["cache_misses"] <= stats["total_loads"]
+                assert (
+                    stats["cache_hits"] + stats["cache_misses"] <= stats["total_loads"]
+                )
                 assert stats["cache_size"] <= stats["cache_limit"]
                 assert stats["loaded_ontologies"] <= stats["successful_loads"]
 
@@ -934,7 +975,11 @@ class TestOntologyManagerStatistics:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def test_statistics_persistence_across_operations(
-        self, ontology_manager, create_test_file, sample_ontology_small, sample_ontology_large
+        self,
+        ontology_manager,
+        create_test_file,
+        sample_ontology_small,
+        sample_ontology_large,
     ):
         """Test that statistics persist correctly across various operations."""
         file1, _, tmp_dir1 = create_test_file("persist1.owl")
@@ -946,7 +991,9 @@ class TestOntologyManagerStatistics:
             ) as mock_auto_detect:
 
                 def get_parser(*args, **kwargs):
-                    file_path = str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    file_path = (
+                        str(args[0]) if args else str(kwargs.get("file_path", ""))
+                    )
                     if "persist1.owl" in file_path:
                         parser = Mock()
                         parser.format_name = "owl"
@@ -991,11 +1038,15 @@ class TestOntologyManagerStatistics:
 
                 # Cache hit on first file
                 ontology_manager.load_ontology(file1)
-                checkpoints.append(("after_cache_hit", ontology_manager.get_statistics()))
+                checkpoints.append(
+                    ("after_cache_hit", ontology_manager.get_statistics())
+                )
 
                 # Clear cache
                 ontology_manager.clear_cache()
-                checkpoints.append(("after_cache_clear", ontology_manager.get_statistics()))
+                checkpoints.append(
+                    ("after_cache_clear", ontology_manager.get_statistics())
+                )
 
                 # Remove ontology
                 ontology_manager.remove_ontology(sample_ontology_small.id)

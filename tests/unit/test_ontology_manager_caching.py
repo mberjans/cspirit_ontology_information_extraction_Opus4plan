@@ -63,9 +63,7 @@ import pytest
 # Import the modules to be tested
 try:
     from aim2_project.aim2_ontology.models import Ontology, Relationship, Term
-    from aim2_project.aim2_ontology.ontology_manager import (
-        OntologyManager,
-    )
+    from aim2_project.aim2_ontology.ontology_manager import OntologyManager
     from aim2_project.aim2_ontology.parsers import ParseResult
 except ImportError:
     import warnings

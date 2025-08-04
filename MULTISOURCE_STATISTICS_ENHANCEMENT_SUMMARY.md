@@ -90,7 +90,7 @@ Each source now maintains detailed statistics:
 
 ### 4. **New Methods Added**
 
-#### `get_ontology_statistics()` 
+#### `get_ontology_statistics()`
 - Comprehensive statistics method with multi-source support
 - Delegates to enhanced `get_statistics()` method
 - Provides backward compatibility
@@ -138,7 +138,7 @@ Each source now maintains detailed statistics:
 manager = OntologyManager()
 results = manager.load_ontologies([
     "ontology1.owl",
-    "ontology2.csv", 
+    "ontology2.csv",
     "ontology3.json"
 ])
 

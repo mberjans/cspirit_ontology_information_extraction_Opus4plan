@@ -153,14 +153,14 @@ Implement cache entry validation in OntologyManager:
 def _is_cached_and_valid(self, source_path: str) -> bool:
     if source_path not in self._cache:
         return False
-    
+
     cache_entry = self._cache[source_path]
-    
+
     # Validate cache entry structure
     if not isinstance(cache_entry, CacheEntry):
         del self._cache[source_path]  # Remove corrupted entry
         return False
-        
+
     # Existing validation logic...
 ```
 
