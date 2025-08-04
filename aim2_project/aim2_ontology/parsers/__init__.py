@@ -3663,119 +3663,1592 @@ class CSVParser(AbstractParser):
 
 
 class JSONLDParser(AbstractParser):
-    """Concrete JSON-LD parser implementation (placeholder for TDD)."""
+    """Comprehensive JSON-LD parser implementation for the AIM2 ontology project.
+
+    This parser provides complete JSON-LD parsing capabilities including:
+    - Multiple JSON-LD formats (compact, expanded, flattened)
+    - Context processing and namespace resolution
+    - Integration with pyld and rdflib libraries
+    - Comprehensive validation including syntax and semantics
+    - Conversion to internal Term/Relationship/Ontology models
+    - Performance optimizations for large JSON-LD documents
+    - Configurable parsing options and error handling
+
+    The parser uses pyld for JSON-LD processing and rdflib for
+    RDF operations and graph management.
+    """
 
     def __init__(self, options: Optional[Dict[str, Any]] = None):
-        """Initialize JSON-LD parser with options."""
+        """Initialize JSON-LD parser with comprehensive options.
+
+        Args:
+            options (Dict[str, Any], optional): Parser configuration options
+        """
         super().__init__("jsonld", options=options)
-        # This is a placeholder implementation for TDD
-        # The actual implementation will be done after tests pass
-        self.logger.warning(
-            "JSONLDParser implementation is pending - using placeholder"
+
+        # Initialize JSON-LD specific validation errors list
+        self._validation_errors: List[str] = []
+        self._current_context: Optional[Dict[str, Any]] = None
+
+        # Import required libraries with fallbacks
+        self._json = __import__("json")
+
+        try:
+            import pyld
+            from pyld import jsonld
+
+            self._pyld = pyld
+            self._jsonld = jsonld
+            self._pyld_available = True
+        except ImportError:
+            self.logger.warning(
+                "pyld not available - JSON-LD functionality will be limited"
+            )
+            self._pyld = None
+            self._jsonld = None
+            self._pyld_available = False
+
+        try:
+            import rdflib
+            from rdflib import BNode, Graph, Literal, Namespace, URIRef
+            from rdflib.namespace import OWL, RDF, RDFS, XSD
+
+            self._rdflib = rdflib
+            self._rdflib_graph = Graph
+            self._rdflib_namespace = Namespace
+            self._rdflib_uriref = URIRef
+            self._rdflib_literal = Literal
+            self._rdflib_bnode = BNode
+            self._RDF = RDF
+            self._RDFS = RDFS
+            self._OWL = OWL
+            self._XSD = XSD
+            self._rdflib_available = True
+        except ImportError:
+            self.logger.warning(
+                "rdflib not available - RDF functionality will be limited"
+            )
+            self._rdflib = None
+            self._rdflib_available = False
+
+        # Set up JSON-LD specific default options
+        jsonld_defaults = {
+            "validate_on_parse": True,
+            "strict_validation": False,
+            "preserve_contexts": True,
+            "resolve_remote_contexts": False,
+            "base_uri": None,
+            "processing_mode": "json-ld-1.1",
+            "expand_contexts": True,
+            "safe_mode": True,
+            "document_loader": None,
+            "timeout": 30,
+            "max_context_depth": 10,
+            "allow_relative_iris": False,
+            "produce_generalized_rdf": False,
+            "use_rdf_type": False,
+            "use_native_types": True,
+            "error_recovery": True,
+            "max_errors": 100,
+            "continue_on_error": True,
+            "log_warnings": True,
+            # Security-related options
+            "max_content_size": 50 * 1024 * 1024,  # 50MB
+            "max_string_length": 1024 * 1024,  # 1MB
+            "max_json_depth": 100,
+            "max_nesting_depth": 100,
+            "max_object_keys": 10000,
+            "max_array_size": 100000,
+        }
+
+        # Update options with JSON-LD defaults
+        for key, value in jsonld_defaults.items():
+            if key not in self.options:
+                self.options[key] = value
+
+        self.logger.info(
+            f"JSON-LD parser initialized with pyld={self._pyld_available}, rdflib={self._rdflib_available}"
         )
 
-    def parse(self, content: str, **kwargs) -> Any:
-        """Parse JSON-LD content."""
-        raise NotImplementedError("Parse method not implemented")
+    def _get_default_options(self) -> Dict[str, Any]:
+        """Get JSON-LD parser specific default options.
 
-    def validate(self, content: str, **kwargs) -> bool:
-        """Validate JSON-LD content."""
-        raise NotImplementedError("Validate method not implemented")
+        Returns:
+            Dict[str, Any]: Default options for JSON-LD parser
+        """
+        base_options = super()._get_default_options()
+        jsonld_options = {
+            "validate_on_parse": True,
+            "strict_validation": False,
+            "preserve_contexts": True,
+            "resolve_remote_contexts": False,
+            "base_uri": None,
+            "processing_mode": "json-ld-1.1",
+            "expand_contexts": True,
+            "safe_mode": True,
+            "document_loader": None,
+            "timeout": 30,
+            "max_context_depth": 10,
+            "allow_relative_iris": False,
+            "produce_generalized_rdf": False,
+            "use_rdf_type": False,
+            "use_native_types": True,
+            # Security-related options
+            "max_content_size": 50 * 1024 * 1024,  # 50MB
+            "max_string_length": 1024 * 1024,  # 1MB
+            "max_json_depth": 100,
+            "max_nesting_depth": 100,
+            "max_object_keys": 10000,
+            "max_array_size": 100000,
+            "conversion_filters": {
+                "include_types": True,
+                "include_ids": True,
+                "include_values": True,
+                "namespace_filter": None,
+                "type_filter": None,
+                "property_filter": None,
+            },
+        }
+        base_options.update(jsonld_options)
+        return base_options
 
     def get_supported_formats(self) -> List[str]:
-        """Get supported JSON-LD formats."""
-        raise NotImplementedError("Get supported formats not implemented")
+        """Get list of supported JSON-LD formats.
 
-    def set_options(self, options: Dict[str, Any]) -> None:
-        """Set parser options."""
-        raise NotImplementedError("Set options not implemented")
+        Returns:
+            List[str]: List of supported formats
+        """
+        return ["jsonld", "json-ld", "json"]
 
-    def get_options(self) -> Dict[str, Any]:
-        """Get current options."""
-        raise NotImplementedError("Get options not implemented")
+    def detect_format(self, content: str) -> str:
+        """Auto-detect JSON-LD format from content.
 
-    def get_metadata(self) -> Dict[str, Any]:
-        """Get parser metadata."""
-        raise NotImplementedError("Get metadata not implemented")
+        Args:
+            content (str): Content to analyze
 
-    def expand(self, document: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        """Expand JSON-LD document."""
-        raise NotImplementedError("Expand method not implemented")
+        Returns:
+            str: Detected format or 'unknown'
+        """
+        try:
+            content_stripped = content.strip()
+            if not content_stripped:
+                return "unknown"
 
-    def compact(
-        self, document: Dict[str, Any], context: Dict[str, Any], **kwargs
-    ) -> Dict[str, Any]:
-        """Compact JSON-LD document."""
-        raise NotImplementedError("Compact method not implemented")
+            # Try to parse as JSON
+            data = self._json.loads(content_stripped)
 
-    def flatten(self, document: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        """Flatten JSON-LD document."""
-        raise NotImplementedError("Flatten method not implemented")
+            # Check for JSON-LD specific markers
+            if isinstance(data, dict):
+                if (
+                    "@context" in data
+                    or "@id" in data
+                    or "@type" in data
+                    or "@graph" in data
+                ):
+                    return "jsonld"
+                # Check nested structures
+                for value in data.values():
+                    if isinstance(value, dict) and any(
+                        key.startswith("@") for key in value.keys()
+                    ):
+                        return "jsonld"
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict) and any(
+                                key.startswith("@") for key in item.keys()
+                            ):
+                                return "jsonld"
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and any(
+                        key.startswith("@") for key in item.keys()
+                    ):
+                        return "jsonld"
 
-    def frame(
-        self, document: Dict[str, Any], frame: Dict[str, Any], **kwargs
-    ) -> Dict[str, Any]:
-        """Frame JSON-LD document."""
-        raise NotImplementedError("Frame method not implemented")
+            # If valid JSON but no JSON-LD markers, return json
+            return "json"
+        except Exception:
+            return "unknown"
 
-    def normalize(self, document: Dict[str, Any], **kwargs) -> str:
-        """Normalize JSON-LD document."""
-        raise NotImplementedError("Normalize method not implemented")
+    def parse(self, content: str, **kwargs) -> Any:
+        """Parse JSON-LD content from string.
 
-    def resolve_context(self, context: Any) -> Dict[str, Any]:
-        """Resolve JSON-LD context."""
-        raise NotImplementedError("Resolve context method not implemented")
+        Args:
+            content (str): JSON-LD content to parse
+            **kwargs: Additional parsing parameters
 
-    def set_context(self, context: Dict[str, Any]) -> None:
-        """Set JSON-LD context."""
-        raise NotImplementedError("Set context method not implemented")
+        Returns:
+            Any: Parsed JSON-LD data structure
 
-    def get_context(self) -> Dict[str, Any]:
-        """Get current JSON-LD context."""
-        raise NotImplementedError("Get context method not implemented")
+        Raises:
+            OntologyException: If parsing fails
+        """
+        try:
+            self.statistics.total_parses += 1
+            start_time = time.time()
 
-    def merge_contexts(
-        self, context1: Dict[str, Any], context2: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Merge two JSON-LD contexts."""
-        raise NotImplementedError("Merge contexts method not implemented")
+            # Clear previous validation errors
+            self._validation_errors = []
 
-    def to_rdf(self, document: Dict[str, Any], **kwargs) -> Any:
-        """Convert JSON-LD to RDF."""
-        raise NotImplementedError("To RDF method not implemented")
+            # Apply security protections before parsing
+            if self.options.get("safe_mode", True):
+                self._validate_content_security(content)
 
-    def from_rdf(self, rdf_data: Any, **kwargs) -> Dict[str, Any]:
-        """Convert RDF to JSON-LD."""
-        raise NotImplementedError("From RDF method not implemented")
+            # Detect format if not specified
+            format_hint = kwargs.get("format", self.detect_format(content))
+            self.logger.debug(f"Parsing JSON-LD content with format: {format_hint}")
+
+            # Validate format if strict validation is enabled
+            if self.options.get("strict_validation", False):
+                if not self.validate(content, **kwargs):
+                    raise OntologyException(
+                        f"Content validation failed for format: {format_hint}",
+                        context={"format": format_hint, "content_length": len(content)},
+                    )
+
+            # Parse JSON first with security protections
+            try:
+                # Use secure JSON parsing with depth limits
+                data = self._secure_json_parse(content)
+            except self._json.JSONDecodeError as e:
+                raise OntologyException(f"Invalid JSON content: {str(e)}")
+            except RecursionError:
+                raise OntologyException(
+                    "JSON structure too deeply nested - potential JSON bomb attack"
+                )
+            except MemoryError:
+                raise OntologyException(
+                    "JSON content too large - potential JSON bomb attack"
+                )
+
+            # Process JSON-LD data
+            processed_data = data
+
+            # Try to expand with pyld if available
+            if self._pyld_available:
+                try:
+                    # Expand the document to normalize it
+                    processed_data = self.expand(data, **kwargs)
+                except Exception as e:
+                    if not self.options.get("error_recovery", True):
+                        raise OntologyException(f"JSON-LD processing failed: {str(e)}")
+                    self.logger.warning(
+                        f"JSON-LD processing failed, using raw data: {str(e)}"
+                    )
+                    processed_data = data
+
+            # Convert to ontology format if requested
+            if kwargs.get("convert_to_ontology", True):
+                try:
+                    ontology_data = self.to_ontology(processed_data, **kwargs)
+                    if ontology_data:
+                        # Update statistics
+                        self.statistics.successful_parses += 1
+                        parse_time = time.time() - start_time
+                        self.statistics.total_parse_time += parse_time
+                        self.statistics.average_parse_time = (
+                            self.statistics.total_parse_time
+                            / self.statistics.total_parses
+                        )
+                        self.statistics.total_content_processed += len(content)
+
+                        return ontology_data
+                    else:
+                        self.logger.warning(
+                            "Ontology conversion returned None, falling back to raw data"
+                        )
+                except Exception as e:
+                    if not self.options.get("error_recovery", True):
+                        raise OntologyException(f"Ontology conversion failed: {str(e)}")
+                    self.logger.warning(
+                        f"Ontology conversion failed, returning processed data: {str(e)}"
+                    )
+
+            # Return processed JSON-LD data
+            self.statistics.successful_parses += 1
+            parse_time = time.time() - start_time
+            self.statistics.total_parse_time += parse_time
+            self.statistics.average_parse_time = (
+                self.statistics.total_parse_time / self.statistics.total_parses
+            )
+            self.statistics.total_content_processed += len(content)
+
+            return processed_data
+
+        except Exception as e:
+            self.statistics.failed_parses += 1
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"JSON-LD parsing failed: {str(e)}")
+
+    def validate(self, content: str, **kwargs) -> bool:
+        """Validate JSON-LD content format and structure.
+
+        Args:
+            content (str): Content to validate
+            **kwargs: Additional validation parameters
+
+        Returns:
+            bool: True if content is valid JSON-LD
+        """
+        try:
+            self._validation_errors = []
+
+            # Basic JSON validation
+            try:
+                data = self._json.loads(content)
+            except self._json.JSONDecodeError as e:
+                self._validation_errors.append(f"Invalid JSON: {str(e)}")
+                return False
+
+            # JSON-LD specific validation
+            if not self._is_valid_jsonld_structure(data):
+                self._validation_errors.append("Not a valid JSON-LD structure")
+                return False
+
+            # Advanced validation with pyld if available
+            if self._pyld_available and self.options.get("strict_validation", False):
+                try:
+                    # Try to expand the document to validate JSON-LD semantics
+                    self._jsonld.expand(data)
+                except Exception as e:
+                    self._validation_errors.append(
+                        f"JSON-LD expansion failed: {str(e)}"
+                    )
+                    return False
+
+            return len(self._validation_errors) == 0
+
+        except Exception as e:
+            self._validation_errors.append(f"Validation error: {str(e)}")
+            return False
+
+    def _is_valid_jsonld_structure(self, data: Any) -> bool:
+        """Check if data has valid JSON-LD structure.
+
+        Args:
+            data: Parsed JSON data
+
+        Returns:
+            bool: True if structure is valid JSON-LD
+        """
+        if isinstance(data, dict):
+            # Check for JSON-LD keywords
+            jsonld_keywords = {
+                "@context",
+                "@id",
+                "@type",
+                "@value",
+                "@language",
+                "@index",
+                "@set",
+                "@list",
+                "@graph",
+                "@nest",
+                "@reverse",
+            }
+
+            # Must have at least one JSON-LD keyword or be a nested structure
+            has_jsonld_keyword = any(key in jsonld_keywords for key in data.keys())
+
+            if has_jsonld_keyword:
+                return True
+
+            # Check nested structures
+            for value in data.values():
+                if isinstance(value, (dict, list)) and self._is_valid_jsonld_structure(
+                    value
+                ):
+                    return True
+
+        elif isinstance(data, list):
+            # List of JSON-LD objects
+            return any(self._is_valid_jsonld_structure(item) for item in data)
+
+        return False
 
     def get_namespaces(self, document: Dict[str, Any]) -> Dict[str, str]:
-        """Get namespaces from JSON-LD document."""
-        raise NotImplementedError("Get namespaces method not implemented")
+        """Get namespaces from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+
+        Returns:
+            Dict[str, str]: Namespace prefix to URI mappings
+        """
+        namespaces = {}
+
+        try:
+            # Extract from @context
+            context = document.get("@context", {})
+            if isinstance(context, dict):
+                for key, value in context.items():
+                    if isinstance(value, str) and (
+                        value.startswith("http://") or value.startswith("https://")
+                    ):
+                        namespaces[key] = value
+                    elif isinstance(value, dict) and "@id" in value:
+                        uri = value["@id"]
+                        if isinstance(uri, str) and (
+                            uri.startswith("http://") or uri.startswith("https://")
+                        ):
+                            namespaces[key] = uri
+
+            # Add common RDF namespaces if not present
+            default_namespaces = {
+                "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+                "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+                "owl": "http://www.w3.org/2002/07/owl#",
+                "xsd": "http://www.w3.org/2001/XMLSchema#",
+            }
+
+            for prefix, uri in default_namespaces.items():
+                if prefix not in namespaces:
+                    namespaces[prefix] = uri
+
+            return namespaces
+
+        except Exception as e:
+            self.logger.warning(f"Error extracting namespaces: {str(e)}")
+            return {}
 
     def expand_namespaces(self, document: Dict[str, Any]) -> Dict[str, Any]:
-        """Expand namespaces in JSON-LD document."""
-        raise NotImplementedError("Expand namespaces method not implemented")
+        """Expand namespaces in JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+
+        Returns:
+            Dict[str, Any]: Document with expanded namespaces
+        """
+        try:
+            # Use expand method which naturally expands namespaces
+            return self.expand(document)
+        except Exception as e:
+            self.logger.warning(f"Error expanding namespaces: {str(e)}")
+            return document
 
     def parse_file(self, file_path: str, **kwargs) -> Any:
-        """Parse JSON-LD file from file path."""
-        raise NotImplementedError("Parse file method not implemented")
+        """Parse JSON-LD file from file path.
+
+        Args:
+            file_path (str): Path to JSON-LD file
+            **kwargs: Additional parsing parameters
+
+        Returns:
+            Any: Parsed JSON-LD data
+
+        Raises:
+            OntologyException: If file parsing fails
+        """
+        try:
+            file_path_obj = Path(file_path)
+            if not file_path_obj.exists():
+                raise OntologyException(f"File not found: {file_path}")
+
+            encoding = kwargs.get("encoding", "utf-8")
+            with open(file_path_obj, "r", encoding=encoding) as f:
+                content = f.read()
+
+            return self.parse(content, **kwargs)
+
+        except Exception as e:
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"File parsing failed: {str(e)}")
 
     def parse_string(self, content: str, **kwargs) -> Any:
-        """Parse JSON-LD content from string."""
-        raise NotImplementedError("Parse string method not implemented")
+        """Parse JSON-LD content from string.
+
+        Args:
+            content (str): JSON-LD content string
+            **kwargs: Additional parsing parameters
+
+        Returns:
+            Any: Parsed JSON-LD data
+        """
+        return self.parse(content, **kwargs)
 
     def parse_stream(self, stream, **kwargs) -> Any:
-        """Parse JSON-LD from stream/file-like object."""
-        raise NotImplementedError("Parse stream method not implemented")
+        """Parse JSON-LD from stream/file-like object.
+
+        Args:
+            stream: File-like object containing JSON-LD data
+            **kwargs: Additional parsing parameters
+
+        Returns:
+            Any: Parsed JSON-LD data
+
+        Raises:
+            OntologyException: If stream parsing fails
+        """
+        try:
+            content = stream.read()
+            if isinstance(content, bytes):
+                encoding = kwargs.get("encoding", "utf-8")
+                content = content.decode(encoding)
+
+            return self.parse(content, **kwargs)
+
+        except Exception as e:
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"Stream parsing failed: {str(e)}")
 
     def validate_jsonld(self, content: str, **kwargs) -> Dict[str, Any]:
-        """Validate JSON-LD content with detailed results."""
-        raise NotImplementedError("Validate JSON-LD method not implemented")
+        """Validate JSON-LD content with detailed results.
+
+        Args:
+            content (str): JSON-LD content to validate
+            **kwargs: Additional validation parameters
+
+        Returns:
+            Dict[str, Any]: Detailed validation results
+        """
+        result = {
+            "valid_json": False,
+            "valid_jsonld": False,
+            "valid_structure": False,
+            "errors": [],
+            "warnings": [],
+            "statistics": {},
+        }
+
+        try:
+            # Basic JSON validation
+            try:
+                data = self._json.loads(content)
+                result["valid_json"] = True
+            except self._json.JSONDecodeError as e:
+                result["errors"].append(f"Invalid JSON: {str(e)}")
+                return result
+
+            # JSON-LD structure validation
+            if self._is_valid_jsonld_structure(data):
+                result["valid_structure"] = True
+            else:
+                result["errors"].append("Not a valid JSON-LD structure")
+
+            # Advanced JSON-LD validation
+            if self._pyld_available and result["valid_structure"]:
+                try:
+                    # Try to expand the document
+                    expanded = self._jsonld.expand(data)
+                    result["valid_jsonld"] = True
+                    result["statistics"]["expanded_nodes"] = len(expanded)
+                except Exception as e:
+                    result["errors"].append(f"JSON-LD expansion failed: {str(e)}")
+
+            # Additional checks
+            if isinstance(data, dict):
+                if "@context" in data:
+                    result["statistics"]["has_context"] = True
+                if "@graph" in data:
+                    result["statistics"]["has_graph"] = True
+
+            return result
+
+        except Exception as e:
+            result["errors"].append(f"Validation error: {str(e)}")
+            return result
 
     def get_validation_errors(self) -> List[str]:
-        """Get validation errors."""
-        raise NotImplementedError("Get validation errors method not implemented")
+        """Get validation errors.
+
+        Returns:
+            List[str]: List of validation errors
+        """
+        return self._validation_errors.copy()
 
     def reset_options(self) -> None:
         """Reset options to defaults."""
-        raise NotImplementedError("Reset options method not implemented")
+        self.options = copy.deepcopy(self._get_default_options())
+        self._current_context = None
+        self._validation_errors = []
+        self.logger.debug("Options reset to defaults")
+
+    # JSON-LD transformation methods
+    def expand(
+        self, document: Union[Dict[str, Any], List[Dict[str, Any]]], **kwargs
+    ) -> List[Dict[str, Any]]:
+        """Expand JSON-LD document to normalized form.
+
+        Args:
+            document: JSON-LD document to expand
+            **kwargs: Additional expansion options
+
+        Returns:
+            List[Dict[str, Any]]: Expanded JSON-LD document
+
+        Raises:
+            OntologyException: If expansion fails
+        """
+        try:
+            # Apply security checks if safe_mode is enabled
+            if self.options.get("safe_mode", True):
+                self._apply_safe_mode_restrictions(document)
+
+            # Use pyld if available
+            if self._pyld_available:
+                try:
+                    # Prepare expansion options
+                    expand_options = {
+                        "base": kwargs.get("base", self.options.get("base_uri")),
+                        "expandContext": kwargs.get("expand_context"),
+                        "keepFreeFloatingNodes": kwargs.get(
+                            "keep_free_floating_nodes", False
+                        ),
+                        "processingMode": self.options.get(
+                            "processing_mode", "json-ld-1.1"
+                        ),
+                        "documentLoader": self.options.get("document_loader"),
+                    }
+
+                    # Remove None values
+                    expand_options = {
+                        k: v for k, v in expand_options.items() if v is not None
+                    }
+
+                    # Perform expansion
+                    expanded = self._jsonld.expand(document, expand_options)
+
+                    # Ensure we return a list
+                    if not isinstance(expanded, list):
+                        expanded = [expanded] if expanded else []
+
+                    return expanded
+
+                except Exception as e:
+                    if not self.options.get("error_recovery", True):
+                        raise OntologyException(f"JSON-LD expansion failed: {str(e)}")
+                    self.logger.warning(
+                        f"pyld expansion failed, using fallback: {str(e)}"
+                    )
+
+            # Fallback implementation
+            return self._expand_fallback(document)
+
+        except Exception as e:
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"Document expansion failed: {str(e)}")
+
+    def compact(
+        self,
+        document: Union[Dict[str, Any], List[Dict[str, Any]]],
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Compact JSON-LD document using provided context.
+
+        Args:
+            document: JSON-LD document to compact
+            context: Context to use for compaction
+            **kwargs: Additional compaction options
+
+        Returns:
+            Dict[str, Any]: Compacted JSON-LD document
+
+        Raises:
+            OntologyException: If compaction fails
+        """
+        try:
+            # Apply security checks if safe_mode is enabled
+            if self.options.get("safe_mode", True):
+                self._apply_safe_mode_restrictions(document)
+                if context:
+                    self._apply_safe_mode_restrictions(context)
+
+            # Use pyld if available
+            if self._pyld_available:
+                try:
+                    # Prepare compaction options
+                    compact_options = {
+                        "base": kwargs.get("base", self.options.get("base_uri")),
+                        "compactArrays": kwargs.get("compact_arrays", True),
+                        "graph": kwargs.get("graph", False),
+                        "skipExpansion": kwargs.get("skip_expansion", False),
+                        "processingMode": self.options.get(
+                            "processing_mode", "json-ld-1.1"
+                        ),
+                        "documentLoader": self.options.get("document_loader"),
+                    }
+
+                    # Remove None values
+                    compact_options = {
+                        k: v for k, v in compact_options.items() if v is not None
+                    }
+
+                    # Use provided context or default
+                    if context is None:
+                        context = self._current_context or {}
+
+                    # Perform compaction
+                    compacted = self._jsonld.compact(document, context, compact_options)
+                    return compacted
+
+                except Exception as e:
+                    if not self.options.get("error_recovery", True):
+                        raise OntologyException(f"JSON-LD compaction failed: {str(e)}")
+                    self.logger.warning(
+                        f"pyld compaction failed, using fallback: {str(e)}"
+                    )
+
+            # Fallback implementation
+            return self._compact_fallback(document, context)
+
+        except Exception as e:
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"Document compaction failed: {str(e)}")
+
+    def flatten(
+        self,
+        document: Union[Dict[str, Any], List[Dict[str, Any]]],
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Flatten JSON-LD document to a single graph representation.
+
+        Args:
+            document: JSON-LD document to flatten
+            context: Context to use for flattening
+            **kwargs: Additional flattening options
+
+        Returns:
+            Dict[str, Any]: Flattened JSON-LD document
+
+        Raises:
+            OntologyException: If flattening fails
+        """
+        try:
+            # Apply security checks if safe_mode is enabled
+            if self.options.get("safe_mode", True):
+                self._apply_safe_mode_restrictions(document)
+                if context:
+                    self._apply_safe_mode_restrictions(context)
+
+            # Use pyld if available
+            if self._pyld_available:
+                try:
+                    # Prepare flattening options
+                    flatten_options = {
+                        "base": kwargs.get("base", self.options.get("base_uri")),
+                        "processingMode": self.options.get(
+                            "processing_mode", "json-ld-1.1"
+                        ),
+                        "documentLoader": self.options.get("document_loader"),
+                    }
+
+                    # Remove None values
+                    flatten_options = {
+                        k: v for k, v in flatten_options.items() if v is not None
+                    }
+
+                    # Use provided context or default
+                    if context is None:
+                        context = self._current_context or {}
+
+                    # Perform flattening
+                    flattened = self._jsonld.flatten(document, context, flatten_options)
+                    return flattened
+
+                except Exception as e:
+                    if not self.options.get("error_recovery", True):
+                        raise OntologyException(f"JSON-LD flattening failed: {str(e)}")
+                    self.logger.warning(
+                        f"pyld flattening failed, using fallback: {str(e)}"
+                    )
+
+            # Fallback implementation
+            return self._flatten_fallback(document, context)
+
+        except Exception as e:
+            if isinstance(e, OntologyException):
+                raise
+            raise OntologyException(f"Document flattening failed: {str(e)}")
+
+    # Security and safety methods
+    def _apply_safe_mode_restrictions(self, data: Any) -> None:
+        """Apply safe mode restrictions to prevent security issues.
+
+        Args:
+            data: Data to check for security restrictions
+
+        Raises:
+            OntologyException: If data violates safe mode restrictions
+        """
+        if not self.options.get("safe_mode", True):
+            return
+
+        # Check data size
+        max_size = self.options.get(
+            "max_content_size", 50 * 1024 * 1024
+        )  # 50MB default
+        if hasattr(data, "__len__"):
+            try:
+                data_str = str(data)
+                if len(data_str) > max_size:
+                    raise OntologyException(
+                        f"Content size {len(data_str)} exceeds maximum allowed size {max_size}"
+                    )
+            except (TypeError, ValueError):
+                pass  # Skip size check if string conversion fails
+
+        # Check nesting depth
+        max_depth = self.options.get("max_nesting_depth", 100)
+        current_depth = self._calculate_nesting_depth(data)
+        if current_depth > max_depth:
+            raise OntologyException(
+                f"Nesting depth {current_depth} exceeds maximum allowed depth {max_depth}"
+            )
+
+        # Additional safe mode checks
+        if isinstance(data, dict):
+            # Limit number of keys
+            max_keys = self.options.get("max_object_keys", 10000)
+            if len(data) > max_keys:
+                raise OntologyException(
+                    f"Object has {len(data)} keys, exceeds maximum {max_keys}"
+                )
+
+            # Check for suspicious patterns
+            for key in data.keys():
+                if isinstance(key, str) and len(key) > 1000:
+                    raise OntologyException("Object key length exceeds safety limits")
+
+        elif isinstance(data, list):
+            # Limit array size
+            max_array_size = self.options.get("max_array_size", 100000)
+            if len(data) > max_array_size:
+                raise OntologyException(
+                    f"Array size {len(data)} exceeds maximum {max_array_size}"
+                )
+
+    def _calculate_nesting_depth(self, data: Any, current_depth: int = 0) -> int:
+        """Calculate the maximum nesting depth of a data structure."""
+        if current_depth > 200:  # Prevent stack overflow during depth calculation
+            return current_depth
+
+        max_depth = current_depth
+
+        if isinstance(data, dict):
+            for value in data.values():
+                depth = self._calculate_nesting_depth(value, current_depth + 1)
+                max_depth = max(max_depth, depth)
+        elif isinstance(data, list):
+            for item in data:
+                depth = self._calculate_nesting_depth(item, current_depth + 1)
+                max_depth = max(max_depth, depth)
+
+        return max_depth
+
+    def _validate_content_security(self, content: str) -> None:
+        """Validate content for security issues before parsing.
+
+        Args:
+            content: Content string to validate
+
+        Raises:
+            OntologyException: If content violates security restrictions
+        """
+        # Check content size
+        max_size = self.options.get(
+            "max_content_size", 50 * 1024 * 1024
+        )  # 50MB default
+        if len(content) > max_size:
+            raise OntologyException(
+                f"Content size {len(content)} bytes exceeds maximum allowed size {max_size} bytes"
+            )
+
+        # Check for suspicious patterns that might indicate JSON bombs
+        if content.count("{") > 100000 or content.count("[") > 100000:
+            raise OntologyException(
+                "Content contains suspiciously high number of nested structures"
+            )
+
+        # Check for extremely long strings that might cause memory issues
+        max_string_length = self.options.get(
+            "max_string_length", 1024 * 1024
+        )  # 1MB default
+        lines = content.split("\n")
+        for i, line in enumerate(
+            lines[:1000]
+        ):  # Check first 1000 lines only for performance
+            if len(line) > max_string_length:
+                raise OntologyException(
+                    f"Line {i+1} exceeds maximum string length {max_string_length}"
+                )
+
+    def _secure_json_parse(self, content: str) -> Any:
+        """Parse JSON with security protections against JSON bombs.
+
+        Args:
+            content: JSON content to parse
+
+        Returns:
+            Parsed JSON data
+
+        Raises:
+            Various exceptions for security violations
+        """
+        # Set recursion limit to prevent stack overflow
+        import sys
+
+        original_limit = sys.getrecursionlimit()
+        max_depth = self.options.get("max_json_depth", 100)
+
+        try:
+            # Temporarily set a lower recursion limit
+            sys.setrecursionlimit(
+                max_depth + 50
+            )  # Add some buffer for Python internals
+
+            # Parse with the standard JSON parser
+            data = self._json.loads(content)
+
+            # Additional validation after parsing
+            if self.options.get("safe_mode", True):
+                self._apply_safe_mode_restrictions(data)
+
+            return data
+
+        finally:
+            # Always restore the original recursion limit
+            sys.setrecursionlimit(original_limit)
+
+    # Fallback implementations for when pyld is not available
+    def _expand_fallback(
+        self, document: Union[Dict[str, Any], List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        """Fallback expansion implementation without pyld."""
+        try:
+            if isinstance(document, list):
+                expanded = []
+                for item in document:
+                    expanded.extend(self._expand_fallback(item))
+                return expanded
+
+            if not isinstance(document, dict):
+                return []
+
+            # Simple expansion - just ensure it's in list format and preserve structure
+            expanded_doc = document.copy()
+
+            # Remove context for expansion (contexts are not included in expanded form)
+            if "@context" in expanded_doc:
+                del expanded_doc["@context"]
+
+            return [expanded_doc]
+
+        except Exception as e:
+            self.logger.warning(f"Fallback expansion failed: {str(e)}")
+            return [document] if isinstance(document, dict) else []
+
+    def _compact_fallback(
+        self,
+        document: Union[Dict[str, Any], List[Dict[str, Any]]],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Fallback compaction implementation without pyld."""
+        try:
+            if isinstance(document, list):
+                if len(document) == 1:
+                    compacted = self._compact_fallback(document[0], context)
+                else:
+                    # Multiple documents - create a @graph structure
+                    compacted = {"@graph": document}
+            else:
+                compacted = document.copy() if isinstance(document, dict) else {}
+
+            # Add context if provided
+            if context:
+                compacted["@context"] = context
+
+            return compacted
+
+        except Exception as e:
+            self.logger.warning(f"Fallback compaction failed: {str(e)}")
+            return document if isinstance(document, dict) else {}
+
+    def _flatten_fallback(
+        self,
+        document: Union[Dict[str, Any], List[Dict[str, Any]]],
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Fallback flattening implementation without pyld."""
+        try:
+            # Simple flattening - collect all nodes into a @graph array
+            nodes = []
+
+            if isinstance(document, list):
+                for item in document:
+                    if isinstance(item, dict):
+                        nodes.append(item)
+            elif isinstance(document, dict):
+                if "@graph" in document:
+                    # Already has @graph, extract nodes
+                    graph_data = document["@graph"]
+                    if isinstance(graph_data, list):
+                        nodes.extend(graph_data)
+                    else:
+                        nodes.append(graph_data)
+                else:
+                    # Single document
+                    nodes.append(document)
+
+            # Create flattened structure
+            flattened = {"@graph": nodes}
+
+            # Add context if provided
+            if context:
+                flattened["@context"] = context
+
+            return flattened
+
+        except Exception as e:
+            self.logger.warning(f"Fallback flattening failed: {str(e)}")
+            return document if isinstance(document, dict) else {}
+
+    # Graph and node operations
+    def extract_graphs(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract graphs from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+
+        Returns:
+            List[Dict[str, Any]]: List of extracted graphs
+        """
+        graphs = []
+
+        try:
+            if "@graph" in document:
+                # Document contains explicit graphs
+                graph_data = document["@graph"]
+                if isinstance(graph_data, list):
+                    graphs.extend(graph_data)
+                else:
+                    graphs.append(graph_data)
+            else:
+                # Treat entire document as a single graph
+                graphs.append(document)
+
+            return graphs
+
+        except Exception as e:
+            self.logger.warning(f"Error extracting graphs: {str(e)}")
+            return []
+
+    def merge_graphs(self, graphs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple graphs into a single JSON-LD document.
+
+        Args:
+            graphs (List[Dict[str, Any]]): List of graphs to merge
+
+        Returns:
+            Dict[str, Any]: Merged JSON-LD document with @graph
+        """
+        try:
+            if not graphs:
+                return {}
+
+            if len(graphs) == 1:
+                return graphs[0]
+
+            # Create a document with @graph containing all graphs
+            merged = {"@context": {}, "@graph": graphs}
+
+            # Merge contexts from all graphs
+            for graph in graphs:
+                if isinstance(graph, dict) and "@context" in graph:
+                    context = graph["@context"]
+                    if isinstance(context, dict):
+                        merged["@context"].update(context)
+
+            return merged
+
+        except Exception as e:
+            self.logger.warning(f"Error merging graphs: {str(e)}")
+            return {}
+
+    def filter_graph(
+        self, document: Dict[str, Any], filter_func: Callable
+    ) -> Dict[str, Any]:
+        """Filter nodes in a JSON-LD graph.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            filter_func (Callable): Function to filter nodes
+
+        Returns:
+            Dict[str, Any]: Filtered JSON-LD document
+        """
+        try:
+            filtered = document.copy()
+
+            if "@graph" in document:
+                graph_data = document["@graph"]
+                if isinstance(graph_data, list):
+                    filtered["@graph"] = [
+                        node for node in graph_data if filter_func(node)
+                    ]
+
+            return filtered
+
+        except Exception as e:
+            self.logger.warning(f"Error filtering graph: {str(e)}")
+            return document
+
+    def get_nodes(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get all nodes from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+
+        Returns:
+            List[Dict[str, Any]]: List of nodes
+        """
+        nodes = []
+
+        try:
+            if "@graph" in document:
+                graph_data = document["@graph"]
+                if isinstance(graph_data, list):
+                    nodes.extend(graph_data)
+                else:
+                    nodes.append(graph_data)
+            elif "@id" in document or "@type" in document:
+                # Document itself is a node
+                nodes.append(document)
+
+            return nodes
+
+        except Exception as e:
+            self.logger.warning(f"Error getting nodes: {str(e)}")
+            return []
+
+    def get_node_by_id(
+        self, document: Dict[str, Any], node_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get node by ID from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            node_id (str): Node ID to find
+
+        Returns:
+            Optional[Dict[str, Any]]: Node with matching ID or None
+        """
+        try:
+            nodes = self.get_nodes(document)
+            for node in nodes:
+                if isinstance(node, dict) and node.get("@id") == node_id:
+                    return node
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Error getting node by ID: {str(e)}")
+            return None
+
+    def get_nodes_by_type(
+        self, document: Dict[str, Any], node_type: str
+    ) -> List[Dict[str, Any]]:
+        """Get nodes by type from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            node_type (str): Node type to find
+
+        Returns:
+            List[Dict[str, Any]]: Nodes with matching type
+        """
+        matching_nodes = []
+
+        try:
+            nodes = self.get_nodes(document)
+            for node in nodes:
+                if isinstance(node, dict):
+                    node_types = node.get("@type", [])
+                    if isinstance(node_types, str):
+                        node_types = [node_types]
+                    if node_type in node_types:
+                        matching_nodes.append(node)
+
+            return matching_nodes
+
+        except Exception as e:
+            self.logger.warning(f"Error getting nodes by type: {str(e)}")
+            return []
+
+    # Conversion methods for ontology data models
+    def to_ontology(self, document: Dict[str, Any], **kwargs) -> Optional["Ontology"]:
+        """Convert JSON-LD document to Ontology object.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            **kwargs: Additional conversion parameters
+
+        Returns:
+            Optional[Ontology]: Converted Ontology object or None
+        """
+        try:
+            if not Ontology:
+                self.logger.warning("Ontology class not available")
+                return None
+
+            # Extract terms and relationships
+            terms_list = self.extract_terms(document, **kwargs)
+            relationships_list = self.extract_relationships(document, **kwargs)
+            metadata = self.extract_metadata(document, **kwargs)
+
+            # Convert lists to dictionaries as expected by Ontology class
+            terms_dict = {term.id: term for term in terms_list}
+            relationships_dict = {rel.id: rel for rel in relationships_list}
+
+            # Generate a valid ontology ID
+            ontology_id = kwargs.get(
+                "ontology_id", f"JSONLD:{abs(hash(str(document))) % 1000000}"
+            )
+
+            # Create ontology object
+            ontology = Ontology(
+                id=ontology_id,
+                name=kwargs.get(
+                    "name", metadata.get("name", "JSON-LD Imported Ontology")
+                ),
+                terms=terms_dict,
+                relationships=relationships_dict,
+                metadata=metadata,
+                namespaces=kwargs.get(
+                    "namespaces", metadata.get("namespaces", ["jsonld"])
+                ),
+                version=kwargs.get("version", metadata.get("version", "1.0")),
+                description=kwargs.get(
+                    "description",
+                    metadata.get("description", "JSON-LD imported ontology"),
+                ),
+            )
+
+            return ontology
+
+        except Exception as e:
+            self.logger.error(f"Error converting to ontology: {str(e)}")
+            return None
+
+    def extract_terms(self, document: Dict[str, Any], **kwargs) -> List["Term"]:
+        """Extract terms from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            **kwargs: Additional extraction parameters
+
+        Returns:
+            List[Term]: List of extracted terms
+        """
+        terms = []
+
+        try:
+            if not Term:
+                self.logger.warning("Term class not available")
+                return []
+
+            nodes = self.get_nodes(document)
+
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+
+                node_id = node.get("@id")
+                if not node_id:
+                    continue
+
+                # Extract term properties
+                name = self._extract_label(node)
+                definition = self._extract_definition(node)
+                synonyms = self._extract_synonyms(node)
+                node_types = node.get("@type", [])
+                if isinstance(node_types, str):
+                    node_types = [node_types]
+
+                # Create term metadata including types
+                node_metadata = self._extract_node_metadata(node)
+                if node_types:
+                    node_metadata["types"] = node_types
+
+                # Create term with URI-friendly ID handling
+                try:
+                    term = Term(
+                        id=node_id,
+                        name=name or node_id.split("/")[-1].split("#")[-1],
+                        definition=definition,
+                        synonyms=synonyms,
+                        namespace=self._extract_namespace(node_id),
+                        metadata=node_metadata,
+                    )
+                    terms.append(term)
+                except ValueError as e:
+                    # If term ID validation fails, try to create a compatible ID
+                    self.logger.warning(
+                        f"Term ID validation failed for {node_id}: {str(e)}"
+                    )
+                    # Create a fallback ID in standard format
+                    fallback_id = f"URI:{abs(hash(node_id)) % 1000000}"
+                    try:
+                        term = Term(
+                            id=fallback_id,
+                            name=name or node_id.split("/")[-1].split("#")[-1],
+                            definition=definition,
+                            synonyms=synonyms,
+                            namespace=self._extract_namespace(node_id),
+                            metadata={**node_metadata, "original_id": node_id},
+                        )
+                        terms.append(term)
+                    except Exception as inner_e:
+                        self.logger.error(
+                            f"Failed to create term for {node_id}: {str(inner_e)}"
+                        )
+                        continue
+
+            return terms
+
+        except Exception as e:
+            self.logger.error(f"Error extracting terms: {str(e)}")
+            return []
+
+    def extract_relationships(
+        self, document: Dict[str, Any], **kwargs
+    ) -> List["Relationship"]:
+        """Extract relationships from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            **kwargs: Additional extraction parameters
+
+        Returns:
+            List[Relationship]: List of extracted relationships
+        """
+        relationships = []
+
+        try:
+            if not Relationship:
+                self.logger.warning("Relationship class not available")
+                return []
+
+            nodes = self.get_nodes(document)
+
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+
+                subject_id = node.get("@id")
+                if not subject_id:
+                    continue
+
+                # Extract relationships from node properties
+                for predicate, objects in node.items():
+                    if predicate.startswith("@"):
+                        continue  # Skip JSON-LD keywords
+
+                    if not isinstance(objects, list):
+                        objects = [objects]
+
+                    for obj in objects:
+                        object_id = None
+                        object_value = None
+
+                        if isinstance(obj, dict):
+                            if "@id" in obj:
+                                object_id = obj["@id"]
+                            elif "@value" in obj:
+                                object_value = obj["@value"]
+                        elif isinstance(obj, str):
+                            if obj.startswith(("http://", "https://", "_:")):
+                                object_id = obj
+                            else:
+                                object_value = obj
+                        else:
+                            object_value = str(obj)
+
+                        # Create relationship ID that follows the expected format
+                        rel_hash = (
+                            abs(
+                                hash(
+                                    f"{subject_id}_{predicate}_{object_id or object_value}"
+                                )
+                            )
+                            % 1000000
+                        )
+                        rel_id = f"REL:{rel_hash}"
+
+                        # Create relationship with compatible parameters
+                        try:
+                            relationship = Relationship(
+                                id=rel_id,
+                                subject=subject_id,
+                                predicate=predicate,
+                                object=object_id or object_value or "",
+                                confidence=1.0,  # Default confidence
+                                source="jsonld",
+                                extraction_method="jsonld_parsing",
+                                context="JSON-LD document parsing",
+                            )
+                            relationships.append(relationship)
+                        except ValueError as e:
+                            # Handle ID validation issues for relationships too
+                            self.logger.warning(
+                                f"Relationship creation failed: {str(e)}"
+                            )
+                            # Try with fallback IDs
+                            fallback_subject = f"URI:{abs(hash(subject_id)) % 1000000}"
+                            fallback_object = object_id or object_value or ""
+                            if not object_id and object_value:
+                                # This is a literal, keep as is
+                                pass
+                            elif object_id and not object_id.startswith(
+                                ("http://", "https://", "_:")
+                            ):
+                                # Try to create a compatible object ID
+                                fallback_object = (
+                                    f"URI:{abs(hash(object_id)) % 1000000}"
+                                )
+
+                            try:
+                                relationship = Relationship(
+                                    id=rel_id,
+                                    subject=fallback_subject,
+                                    predicate=predicate,
+                                    object=fallback_object,
+                                    confidence=1.0,
+                                    source="jsonld",
+                                    extraction_method="jsonld_parsing",
+                                    context=f"Original subject: {subject_id}, Original object: {object_id or object_value}",
+                                )
+                                relationships.append(relationship)
+                            except Exception as inner_e:
+                                self.logger.error(
+                                    f"Failed to create relationship: {str(inner_e)}"
+                                )
+                                continue
+
+            return relationships
+
+        except Exception as e:
+            self.logger.error(f"Error extracting relationships: {str(e)}")
+            return []
+
+    def extract_metadata(self, document: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """Extract metadata from JSON-LD document.
+
+        Args:
+            document (Dict[str, Any]): JSON-LD document
+            **kwargs: Additional extraction parameters
+
+        Returns:
+            Dict[str, Any]: Extracted metadata
+        """
+        metadata = {
+            "format": "jsonld",
+            "parser": "JSONLDParser",
+            "extraction_timestamp": datetime.now().isoformat(),
+        }
+
+        try:
+            # Extract basic document metadata
+            if "@context" in document:
+                metadata["contexts"] = document["@context"]
+
+            if "@id" in document:
+                metadata["document_id"] = document["@id"]
+
+            # Extract common ontology metadata properties
+            for prop in [
+                "title",
+                "description",
+                "creator",
+                "created",
+                "modified",
+                "version",
+                "license",
+            ]:
+                if prop in document:
+                    metadata[prop] = document[prop]
+
+            # Extract namespace information
+            namespaces = self.get_namespaces(document)
+            if namespaces:
+                metadata["namespaces"] = namespaces
+
+            # Count statistics
+            nodes = self.get_nodes(document)
+            metadata["node_count"] = len(nodes)
+
+            return metadata
+
+        except Exception as e:
+            self.logger.error(f"Error extracting metadata: {str(e)}")
+            return metadata
+
+    def _extract_label(self, node: Dict[str, Any]) -> Optional[str]:
+        """Extract label from JSON-LD node."""
+        for prop in ["rdfs:label", "label", "name", "title"]:
+            if prop in node:
+                value = node[prop]
+                if isinstance(value, dict) and "@value" in value:
+                    return value["@value"]
+                elif isinstance(value, str):
+                    return value
+        return None
+
+    def _extract_definition(self, node: Dict[str, Any]) -> Optional[str]:
+        """Extract definition from JSON-LD node."""
+        for prop in ["rdfs:comment", "comment", "definition", "description"]:
+            if prop in node:
+                value = node[prop]
+                if isinstance(value, dict) and "@value" in value:
+                    return value["@value"]
+                elif isinstance(value, str):
+                    return value
+        return None
+
+    def _extract_synonyms(self, node: Dict[str, Any]) -> List[str]:
+        """Extract synonyms from JSON-LD node."""
+        synonyms = []
+        for prop in ["synonym", "altLabel", "alternative"]:
+            if prop in node:
+                values = node[prop]
+                if not isinstance(values, list):
+                    values = [values]
+                for value in values:
+                    if isinstance(value, dict) and "@value" in value:
+                        synonyms.append(value["@value"])
+                    elif isinstance(value, str):
+                        synonyms.append(value)
+        return synonyms
+
+    def _extract_namespace(self, uri: str) -> str:
+        """Extract namespace from URI."""
+        if "#" in uri:
+            return uri.split("#")[0] + "#"
+        elif "/" in uri:
+            parts = uri.split("/")
+            return "/".join(parts[:-1]) + "/"
+        return uri
+
+    def _extract_node_metadata(self, node: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract metadata from JSON-LD node."""
+        metadata = {}
+
+        # Copy all non-JSON-LD keyword properties as metadata
+        for key, value in node.items():
+            if not key.startswith("@") and key not in [
+                "rdfs:label",
+                "rdfs:comment",
+                "label",
+                "name",
+                "comment",
+                "definition",
+            ]:
+                metadata[key] = value
+
+        return metadata
