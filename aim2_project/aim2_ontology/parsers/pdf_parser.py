@@ -64,6 +64,16 @@ from aim2_project.aim2_ontology.parsers import AbstractDocumentParser
 from aim2_project.aim2_utils.config_manager import ConfigManager
 from aim2_project.exceptions import ExtractionException, ValidationException
 
+# Import enhanced metadata framework
+from .metadata_framework import (
+    FigureMetadata, TableMetadata, FigureType, TableType, DataType,
+    ContextInfo, TechnicalDetails, ContentAnalysis, QualityMetrics,
+    ContentExtractor, QualityAssessment, ExtractionSummary
+)
+from .content_utils import (
+    TableContentExtractor, FigureContentExtractor, TextAnalyzer, StatisticalAnalyzer
+)
+
 
 class PDFParser(AbstractDocumentParser):
     """
@@ -141,6 +151,14 @@ class PDFParser(AbstractDocumentParser):
         self.add_validation_rule(
             "pdf_extractability", self._validate_pdf_extractability
         )
+
+        # Initialize enhanced metadata framework utilities
+        self.content_extractor = ContentExtractor()
+        self.quality_assessor = QualityAssessment()
+        self.table_content_extractor = TableContentExtractor()
+        self.figure_content_extractor = FigureContentExtractor()
+        self.text_analyzer = TextAnalyzer()
+        self.statistical_analyzer = StatisticalAnalyzer()
 
         self.logger.info(
             f"PDF parser initialized with methods: {self._supported_methods}"
@@ -874,35 +892,656 @@ class PDFParser(AbstractDocumentParser):
         self, content: Any, **kwargs
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Extract figures and tables with captions.
+        Extract figures and tables with comprehensive metadata and content analysis.
+
+        This enhanced method provides:
+        1. Comprehensive metadata extraction using standardized structures
+        2. Advanced content analysis and quality assessment
+        3. Statistical analysis for numerical table data
+        4. Cross-parser compatibility with unified return format
+        5. Quality metrics and validation scoring
 
         Args:
             content (Any): Parsed PDF content or raw PDF data
-            **kwargs: Extraction options
+            **kwargs: Enhanced extraction options including:
+                - extract_table_data (bool): Extract actual table content (default: True)
+                - analyze_content (bool): Perform content analysis (default: True)
+                - include_quality_metrics (bool): Include quality assessment (default: True)
+                - confidence_threshold (float): Minimum confidence for inclusion (default: 0.0)
+                - return_metadata_objects (bool): Return metadata objects instead of dicts (default: False)
 
         Returns:
-            Dict[str, List[Dict[str, Any]]]: Extracted figures and tables
+            Dict[str, Any]: Comprehensive extraction results with standardized format:
+                {
+                    "figures": List[Dict[str, Any]],
+                    "tables": List[Dict[str, Any]],
+                    "extraction_summary": Dict[str, Any]
+                }
 
         Raises:
             ExtractionException: If extraction fails
         """
+        start_time = datetime.now()
+        
         try:
+            # If content is not parsed, parse it first
+            if not isinstance(content, dict):
+                content = self.parse(content, **kwargs)
+
+            # Extract text for analysis
             text = self.extract_text(content, **kwargs)
 
-            figures = self._extract_figures(text, **kwargs)
-            tables = self._extract_tables(text, **kwargs)
+            # Extract figures with comprehensive metadata
+            figure_metadata_list = self._extract_figures_comprehensive(text, content, **kwargs)
 
-            return {"figures": figures, "tables": tables}
+            # Extract tables with comprehensive metadata
+            table_metadata_list = self._extract_tables_comprehensive(text, content, **kwargs)
+
+            # Convert to dictionary format unless metadata objects requested
+            if kwargs.get("return_metadata_objects", False):
+                figures_result = figure_metadata_list
+                tables_result = table_metadata_list
+            else:
+                figures_result = [fig.to_dict() for fig in figure_metadata_list]
+                tables_result = [table.to_dict() for table in table_metadata_list]
+
+            # Generate extraction summary
+            extraction_time = (datetime.now() - start_time).total_seconds()
+            extraction_method = content.get("extraction_method", "auto")
+            
+            summary = self.quality_assessor.generate_extraction_summary(
+                figure_metadata_list, table_metadata_list, extraction_time, extraction_method
+            )
+
+            result = {
+                "figures": figures_result,
+                "tables": tables_result,
+                "extraction_summary": summary.__dict__ if not kwargs.get("return_metadata_objects", False) else summary
+            }
+
+            self.logger.info(
+                f"Comprehensive extraction completed: {len(figures_result)} figures, "
+                f"{len(tables_result)} tables (avg quality: {summary.average_quality_score:.2f})"
+            )
+            
+            return result
 
         except Exception as e:
-            self.logger.error(f"Figure/table extraction failed: {e}")
+            self.logger.error(f"Comprehensive figure/table extraction failed: {e}")
             raise ExtractionException(f"Failed to extract figures/tables: {e}")
 
-    def _extract_figures(self, text: str, **kwargs) -> List[Dict[str, Any]]:
-        """Extract figure references and captions."""
-        figures = []
+    def _extract_figures_comprehensive(
+        self, text: str, content: Dict[str, Any], **kwargs
+    ) -> List[FigureMetadata]:
+        """Extract figures with comprehensive metadata and analysis."""
+        figure_metadata_list = []
+        
+        try:
+            # Use existing extraction methods as base
+            basic_figures = self._extract_figures(text, content, **kwargs)
+            
+            for i, basic_figure in enumerate(basic_figures):
+                # Create comprehensive metadata object
+                figure_meta = FigureMetadata()
+                
+                # Basic information from existing extraction
+                figure_meta.id = basic_figure.get("id", f"figure_{i+1}")
+                figure_meta.label = basic_figure.get("label", "")
+                figure_meta.caption = basic_figure.get("caption", "")
+                figure_meta.position = basic_figure.get("position", i)
+                figure_meta.source_parser = "PDFParser"
+                figure_meta.extraction_method = basic_figure.get("method", "pattern_based")
+                
+                # Classify figure type
+                figure_meta.figure_type = self.content_extractor.classify_figure_type(
+                    figure_meta.caption, text
+                )
+                
+                # Extract context information
+                figure_meta.context = self._extract_figure_context(
+                    figure_meta, text, content, **kwargs
+                )
+                
+                # Extract technical details
+                figure_meta.technical = self._extract_figure_technical_details(
+                    basic_figure, content, **kwargs
+                )
+                
+                # Perform content analysis
+                if kwargs.get("analyze_content", True):
+                    figure_meta.analysis = self.figure_content_extractor.analyze_figure_content(
+                        figure_meta.caption, basic_figure.get("extracted_text", [])
+                    )
+                
+                # Quality assessment
+                if kwargs.get("include_quality_metrics", True):
+                    figure_meta.quality = self.quality_assessor.assess_figure_quality(figure_meta)
+                
+                # Store raw data for reference
+                figure_meta.raw_data = basic_figure
+                
+                # Filter by confidence threshold
+                confidence_threshold = kwargs.get("confidence_threshold", 0.0)
+                if figure_meta.quality.extraction_confidence >= confidence_threshold:
+                    figure_metadata_list.append(figure_meta)
+            
+            return figure_metadata_list
+            
+        except Exception as e:
+            self.logger.error(f"Comprehensive figure extraction failed: {e}")
+            # Fallback: create minimal metadata objects
+            return self._create_fallback_figure_metadata(basic_figures if 'basic_figures' in locals() else [])
 
-        # Pattern for figure captions
+    def _extract_tables_comprehensive(
+        self, text: str, content: Dict[str, Any], **kwargs
+    ) -> List[TableMetadata]:
+        """Extract tables with comprehensive metadata and analysis."""
+        table_metadata_list = []
+        
+        try:
+            # Use existing extraction methods as base
+            basic_tables = self._extract_tables(text, content, **kwargs)
+            
+            for i, basic_table in enumerate(basic_tables):
+                # Create comprehensive metadata object
+                table_meta = TableMetadata()
+                
+                # Basic information from existing extraction
+                table_meta.id = basic_table.get("id", f"table_{i+1}")
+                table_meta.label = basic_table.get("label", "")
+                table_meta.caption = basic_table.get("caption", "")
+                table_meta.position = basic_table.get("position", i)
+                table_meta.source_parser = "PDFParser"
+                table_meta.extraction_method = basic_table.get("method", "pattern_based")
+                
+                # Extract table content if available
+                raw_table_data = basic_table.get("data", [])
+                if raw_table_data and kwargs.get("extract_table_data", True):
+                    # Parse table structure
+                    table_meta.structure = self.table_content_extractor.parse_table_structure(raw_table_data)
+                    
+                    # Extract table content
+                    table_meta.content = self.table_content_extractor.extract_table_content(
+                        raw_table_data, table_meta.structure
+                    )
+                    
+                    # Classify table type
+                    table_meta.table_type = self.content_extractor.classify_table_type(
+                        table_meta.caption, table_meta.structure.column_headers, text
+                    )
+                    
+                    # Perform content analysis
+                    if kwargs.get("analyze_content", True):
+                        table_meta.analysis = self.table_content_extractor.analyze_table_content(
+                            table_meta.content, table_meta.caption
+                        )
+                else:
+                    # Basic structure from available information
+                    table_meta.structure.rows = basic_table.get("rows", 0)
+                    table_meta.structure.columns = basic_table.get("columns", 0)
+                    table_meta.table_type = self.content_extractor.classify_table_type(
+                        table_meta.caption, [], text
+                    )
+                
+                # Extract context information
+                table_meta.context = self._extract_table_context(
+                    table_meta, text, content, **kwargs
+                )
+                
+                # Extract technical details
+                table_meta.technical = self._extract_table_technical_details(
+                    basic_table, content, **kwargs
+                )
+                
+                # Quality assessment
+                if kwargs.get("include_quality_metrics", True):
+                    table_meta.quality = self.quality_assessor.assess_table_quality(table_meta)
+                
+                # Store raw data for reference
+                table_meta.raw_data = basic_table
+                
+                # Filter by confidence threshold
+                confidence_threshold = kwargs.get("confidence_threshold", 0.0)
+                if table_meta.quality.extraction_confidence >= confidence_threshold:
+                    table_metadata_list.append(table_meta)
+            
+            return table_metadata_list
+            
+        except Exception as e:
+            self.logger.error(f"Comprehensive table extraction failed: {e}")
+            # Fallback: create minimal metadata objects
+            return self._create_fallback_table_metadata(basic_tables if 'basic_tables' in locals() else [])
+
+    def _extract_figure_context(
+        self, figure_meta: FigureMetadata, text: str, content: Dict[str, Any], **kwargs
+    ) -> ContextInfo:
+        """Extract contextual information for a figure."""
+        context = ContextInfo()
+        
+        try:
+            # Extract section context from text around figure reference
+            if figure_meta.label or figure_meta.id:
+                search_pattern = figure_meta.label or figure_meta.id
+                context.section_context = self._find_section_context(search_pattern, text)
+            
+            # Extract page number if available from content
+            if "page_info" in content:
+                context.page_number = content["page_info"].get("current_page", None)
+            
+            # Find cross-references
+            if figure_meta.label:
+                context.cross_references = self._find_cross_references(figure_meta.label, text, "figure")
+            
+            # Extract related text (simplified)
+            if figure_meta.caption:
+                context.related_text = figure_meta.caption[:200]  # First 200 chars as related text
+            
+            # Calculate document position (approximate)
+            if text and figure_meta.caption in text:
+                caption_pos = text.find(figure_meta.caption)
+                context.document_position = caption_pos / len(text) if text else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Context extraction failed for figure {figure_meta.id}: {e}")
+        
+        return context
+
+    def _extract_table_context(
+        self, table_meta: TableMetadata, text: str, content: Dict[str, Any], **kwargs
+    ) -> ContextInfo:
+        """Extract contextual information for a table."""
+        context = ContextInfo()
+        
+        try:
+            # Extract section context from text around table reference
+            if table_meta.label or table_meta.id:
+                search_pattern = table_meta.label or table_meta.id
+                context.section_context = self._find_section_context(search_pattern, text)
+            
+            # Extract page number if available from content
+            if "page_info" in content:
+                context.page_number = content["page_info"].get("current_page", None)
+            
+            # Find cross-references
+            if table_meta.label:
+                context.cross_references = self._find_cross_references(table_meta.label, text, "table")
+            
+            # Extract related text
+            if table_meta.caption:
+                context.related_text = table_meta.caption[:200]
+            
+            # Calculate document position (approximate)
+            if text and table_meta.caption in text:
+                caption_pos = text.find(table_meta.caption)
+                context.document_position = caption_pos / len(text) if text else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Context extraction failed for table {table_meta.id}: {e}")
+        
+        return context
+
+    def _extract_figure_technical_details(
+        self, basic_figure: Dict[str, Any], content: Dict[str, Any], **kwargs
+    ) -> TechnicalDetails:
+        """Extract technical details for a figure."""
+        technical = TechnicalDetails()
+        
+        try:
+            # Extract image information if detected by library methods
+            if "image_info" in basic_figure:
+                img_info = basic_figure["image_info"]
+                technical.dimensions = img_info.get("dimensions")
+                technical.resolution = img_info.get("resolution")
+                technical.color_info = img_info.get("color_mode", "unknown")
+                technical.file_format = img_info.get("format")
+                technical.file_size = img_info.get("size")
+            
+            # Set encoding based on extraction method
+            technical.encoding = "PDF"
+            
+        except Exception as e:
+            self.logger.warning(f"Technical details extraction failed: {e}")
+        
+        return technical
+
+    def _extract_table_technical_details(
+        self, basic_table: Dict[str, Any], content: Dict[str, Any], **kwargs
+    ) -> TechnicalDetails:
+        """Extract technical details for a table."""
+        technical = TechnicalDetails()
+        
+        try:
+            # Extract table layout information
+            if "layout_info" in basic_table:
+                layout = basic_table["layout_info"]
+                technical.dimensions = (layout.get("width"), layout.get("height"))
+            
+            # Set encoding and format
+            technical.encoding = "PDF"
+            technical.file_format = "table"
+            
+        except Exception as e:
+            self.logger.warning(f"Technical details extraction failed: {e}")
+        
+        return technical
+
+    def _find_section_context(self, search_pattern: str, text: str) -> str:
+        """Find section context for a figure/table reference."""
+        try:
+            # Look for common section headers before the reference
+            sections = re.findall(
+                r'(?i)((?:abstract|introduction|methods|results|discussion|conclusion)[^\n]*)', 
+                text
+            )
+            
+            # Find position of search pattern
+            if search_pattern in text:
+                pattern_pos = text.find(search_pattern)
+                
+                # Find the closest preceding section
+                closest_section = ""
+                closest_distance = float('inf')
+                
+                for section in sections:
+                    section_pos = text.find(section)
+                    if section_pos < pattern_pos:
+                        distance = pattern_pos - section_pos
+                        if distance < closest_distance:
+                            closest_distance = distance
+                            closest_section = section
+                
+                return closest_section.strip()
+        
+        except Exception as e:
+            self.logger.warning(f"Section context extraction failed: {e}")
+        
+        return ""
+
+    def _find_cross_references(self, label: str, text: str, ref_type: str) -> List[str]:
+        """Find cross-references to a figure or table in text."""
+        references = []
+        
+        try:
+            # Pattern to find references like "see Figure 1", "Table 2 shows", etc.
+            if ref_type == "figure":
+                patterns = [
+                    rf'(?i)\b(?:see|refer to|as shown in|according to)\s+{re.escape(label)}\b',
+                    rf'(?i)\b{re.escape(label)}\s+(?:shows|demonstrates|illustrates|depicts)\b',
+                    rf'(?i)\b\({re.escape(label)}\)\b'
+                ]
+            else:  # table
+                patterns = [
+                    rf'(?i)\b(?:see|refer to|as shown in|according to)\s+{re.escape(label)}\b',
+                    rf'(?i)\b{re.escape(label)}\s+(?:shows|presents|lists|contains)\b',
+                    rf'(?i)\b\({re.escape(label)}\)\b'
+                ]
+            
+            for pattern in patterns:
+                matches = re.finditer(pattern, text)
+                for match in matches:
+                    # Extract surrounding context (50 chars before and after)
+                    start = max(0, match.start() - 50)
+                    end = min(len(text), match.end() + 50)
+                    context = text[start:end].strip()
+                    references.append(context)
+        
+        except Exception as e:
+            self.logger.warning(f"Cross-reference extraction failed: {e}")
+        
+        return references[:5]  # Limit to 5 references
+
+    def _create_fallback_figure_metadata(self, basic_figures: List[Dict[str, Any]]) -> List[FigureMetadata]:
+        """Create minimal figure metadata objects as fallback."""
+        fallback_list = []
+        
+        for i, basic_figure in enumerate(basic_figures):
+            figure_meta = FigureMetadata()
+            figure_meta.id = basic_figure.get("id", f"figure_{i+1}")
+            figure_meta.caption = basic_figure.get("caption", "")
+            figure_meta.label = basic_figure.get("label", "")
+            figure_meta.position = i
+            figure_meta.source_parser = "PDFParser"
+            figure_meta.extraction_method = "fallback"
+            figure_meta.quality.extraction_confidence = 0.3  # Low confidence for fallback
+            fallback_list.append(figure_meta)
+        
+        return fallback_list
+
+    def _create_fallback_table_metadata(self, basic_tables: List[Dict[str, Any]]) -> List[TableMetadata]:
+        """Create minimal table metadata objects as fallback."""
+        fallback_list = []
+        
+        for i, basic_table in enumerate(basic_tables):
+            table_meta = TableMetadata()
+            table_meta.id = basic_table.get("id", f"table_{i+1}")
+            table_meta.caption = basic_table.get("caption", "")
+            table_meta.label = basic_table.get("label", "")
+            table_meta.position = i
+            table_meta.source_parser = "PDFParser"
+            table_meta.extraction_method = "fallback"
+            table_meta.quality.extraction_confidence = 0.3  # Low confidence for fallback
+            fallback_list.append(table_meta)
+        
+        return fallback_list
+
+    def _extract_figures(
+        self, text: str, content: Dict[str, Any], **kwargs
+    ) -> List[Dict[str, Any]]:
+        """Extract figure references and captions with enhanced detection."""
+        figures = []
+        
+        try:
+            # Method 1: Enhanced pattern-based extraction
+            pattern_figures = self._extract_figures_by_patterns(text, **kwargs)
+            figures.extend(pattern_figures)
+            
+            # Method 2: PDF library-specific extraction
+            if kwargs.get("detect_images", True):
+                library_figures = self._extract_figures_by_library(content, **kwargs)
+                figures.extend(library_figures)
+            
+            # Remove duplicates and merge information
+            figures = self._merge_and_deduplicate_figures(figures, **kwargs)
+            
+            # Enhance with metadata
+            figures = self._enhance_figure_metadata(figures, text, **kwargs)
+            
+            return figures
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced figure extraction failed, using basic method: {e}")
+            # Fallback to basic extraction
+            return self._extract_figures_basic_patterns(text, **kwargs)
+
+    def _extract_figures_by_patterns(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Extract figures using multiple improved regex patterns."""
+        figures = []
+        
+        # Multiple figure patterns for better coverage
+        figure_patterns = [
+            # Standard format: Figure 1. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(fig(?:ure)?\s*\.?\s*(\d+)(?:[a-z]?)\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig(?:ure)?|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Alternative format: Fig. 1 - Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(fig\.?\s*(\d+)(?:[a-z]?)\s*[-\u2013\u2014]\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Format with parentheses: Figure (1) Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(fig(?:ure)?\s*\(\s*(\d+)(?:[a-z]?)\s*\)\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Roman numerals: Figure I. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(fig(?:ure)?\s*\.?\s*([IVX]+)\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Mixed numbering: Figure 1a. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(fig(?:ure)?\s*\.?\s*(\d+[a-z])\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            )
+        ]
+        
+        for pattern_idx, pattern in enumerate(figure_patterns):
+            for match in pattern.finditer(text):
+                try:
+                    full_match = match.group(1)
+                    figure_num = match.group(2)
+                    caption = match.group(3).strip() if match.group(3) else ""
+                    
+                    if figure_num and len(caption) > 5:  # Minimum caption length
+                        # Clean caption
+                        caption = self._clean_caption(caption)
+                        
+                        # Convert roman numerals to numbers if needed
+                        if re.match(r'^[IVX]+$', figure_num):
+                            numeric_num = self._roman_to_int(figure_num)
+                        else:
+                            # Extract numeric part for mixed formats like "1a"
+                            numeric_match = re.match(r'(\d+)', figure_num)
+                            numeric_num = int(numeric_match.group(1)) if numeric_match else 0
+                        
+                        figure_data = {
+                            "id": f"figure_{figure_num}",
+                            "number": numeric_num,
+                            "number_string": figure_num,
+                            "caption": caption,
+                            "full_caption": full_match,
+                            "type": "figure",
+                            "position": match.start(),
+                            "end_position": match.end(),
+                            "extraction_method": f"pattern_matching_{pattern_idx + 1}",
+                            "confidence": self._calculate_figure_confidence(caption, figure_num),
+                            "caption_length": len(caption)
+                        }
+                        
+                        figures.append(figure_data)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing figure match: {e}")
+                    continue
+        
+        return figures
+    
+    def _extract_figures_by_library(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract figures using PDF library-specific methods."""
+        figures = []
+        extraction_method = content.get("extraction_method", "unknown")
+        
+        try:
+            if extraction_method == "fitz" and FITZ_AVAILABLE:
+                figures.extend(self._extract_figures_fitz(content, **kwargs))
+            elif extraction_method == "pdfplumber" and PDFPLUMBER_AVAILABLE:
+                figures.extend(self._extract_figures_pdfplumber(content, **kwargs))
+                
+        except Exception as e:
+            self.logger.debug(f"Library-specific figure extraction failed: {e}")
+        
+        return figures
+    
+    def _extract_figures_fitz(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract figures using PyMuPDF (fitz) to detect actual images."""
+        figures = []
+        
+        try:
+            doc = content.get("raw_content")
+            if not doc:
+                return figures
+                
+            for page_num, page in enumerate(content.get("pages", [])):
+                try:
+                    # Get image list from page
+                    image_list = page.get_images()
+                    
+                    for img_index, img in enumerate(image_list):
+                        try:
+                            # Get image information
+                            xref = img[0]  # xref number
+                            pix = fitz.Pixmap(doc, xref)
+                            
+                            # Get image dimensions and position
+                            img_rect = page.get_image_rects(xref)
+                            
+                            figure_data = {
+                                "id": f"image_{page_num + 1}_{img_index + 1}",
+                                "number": img_index + 1,
+                                "type": "image",
+                                "page": page_num + 1,
+                                "width": pix.width,
+                                "height": pix.height,
+                                "colorspace": pix.colorspace.name if pix.colorspace else "unknown",
+                                "alpha": pix.alpha,
+                                "extraction_method": "fitz_image_detection",
+                                "confidence": 0.9,  # High confidence for actual images
+                                "position_rect": img_rect[0] if img_rect else None
+                            }
+                            
+                            figures.append(figure_data)
+                            pix = None  # Clean up
+                            
+                        except Exception as e:
+                            self.logger.debug(f"Error processing image {img_index}: {e}")
+                            continue
+                            
+                except Exception as e:
+                    self.logger.debug(f"Error processing page {page_num}: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.debug(f"PyMuPDF figure extraction failed: {e}")
+        
+        return figures
+    
+    def _extract_figures_pdfplumber(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract figures using pdfplumber to detect visual elements."""
+        figures = []
+        
+        try:
+            pdf = content.get("raw_content")
+            if not pdf:
+                return figures
+                
+            for page_num, page in enumerate(content.get("pages", [])):
+                try:
+                    # Get page images
+                    images = page.images if hasattr(page, 'images') else []
+                    
+                    for img_index, img in enumerate(images):
+                        figure_data = {
+                            "id": f"pdfplumber_img_{page_num + 1}_{img_index + 1}",
+                            "number": img_index + 1,
+                            "type": "image",
+                            "page": page_num + 1,
+                            "x0": img.get('x0'),
+                            "y0": img.get('y0'),
+                            "x1": img.get('x1'),
+                            "y1": img.get('y1'),
+                            "width": img.get('width'),
+                            "height": img.get('height'),
+                            "extraction_method": "pdfplumber_image_detection",
+                            "confidence": 0.8
+                        }
+                        
+                        figures.append(figure_data)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing pdfplumber page {page_num}: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.debug(f"pdfplumber figure extraction failed: {e}")
+        
+        return figures
+    
+    def _extract_figures_basic_patterns(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Fallback basic pattern extraction (original implementation)."""
+        figures = []
+        
+        # Original simple pattern
         figure_pattern = re.compile(
             r"(?i)(fig(?:ure)?\s*\.?\s*(\d+)(?:\s*[:.]\s*)?(.{0,200}?)(?=\n\s*(?:fig|table|\d+\.|$))|$)",
             re.MULTILINE | re.DOTALL,
@@ -920,17 +1559,460 @@ class PDFParser(AbstractDocumentParser):
                         "caption": caption,
                         "type": "figure",
                         "position": match.start(),
-                        "extraction_method": "pattern_matching",
+                        "extraction_method": "basic_pattern_matching",
+                        "confidence": 0.6
                     }
                 )
 
         return figures
+    
+    def _clean_caption(self, caption: str) -> str:
+        """Clean and normalize figure/table captions."""
+        if not caption:
+            return ""
+        
+        # Remove extra whitespace
+        caption = re.sub(r'\s+', ' ', caption.strip())
+        
+        # Remove common artifacts
+        caption = re.sub(r'^[:\-\.\s]+', '', caption)  # Remove leading punctuation
+        caption = re.sub(r'[:\-\.\s]+$', '', caption)  # Remove trailing punctuation
+        
+        # Handle line breaks and formatting
+        caption = caption.replace('\n', ' ').replace('\r', ' ')
+        
+        return caption.strip()
+    
+    def _roman_to_int(self, roman: str) -> int:
+        """Convert roman numerals to integers."""
+        roman_numerals = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+        result = 0
+        prev_value = 0
+        
+        for char in reversed(roman.upper()):
+            value = roman_numerals.get(char, 0)
+            if value < prev_value:
+                result -= value
+            else:
+                result += value
+            prev_value = value
+        
+        return result
+    
+    def _calculate_figure_confidence(self, caption: str, figure_num: str) -> float:
+        """Calculate confidence score for figure extraction."""
+        confidence = 0.7  # Base confidence
+        
+        # Adjust based on caption length
+        if len(caption) > 50:
+            confidence += 0.1
+        elif len(caption) < 10:
+            confidence -= 0.2
+        
+        # Adjust based on figure number format
+        if figure_num.isdigit():
+            confidence += 0.1
+        elif re.match(r'\d+[a-z]', figure_num):
+            confidence += 0.05
+        
+        # Check for caption quality indicators
+        quality_indicators = [
+            'shows', 'illustrates', 'depicts', 'represents', 'displays',
+            'comparison', 'distribution', 'relationship', 'analysis'
+        ]
+        
+        caption_lower = caption.lower()
+        for indicator in quality_indicators:
+            if indicator in caption_lower:
+                confidence += 0.05
+                break
+        
+        return min(1.0, max(0.1, confidence))
+    
+    def _merge_and_deduplicate_figures(self, figures: List[Dict[str, Any]], **kwargs) -> List[Dict[str, Any]]:
+        """Merge and deduplicate figures from different extraction methods."""
+        if not figures:
+            return figures
+        
+        # Group figures by number for deduplication
+        figure_groups = {}
+        
+        for figure in figures:
+            key = figure.get('number', 0)
+            if key not in figure_groups:
+                figure_groups[key] = []
+            figure_groups[key].append(figure)
+        
+        merged_figures = []
+        
+        for number, group in figure_groups.items():
+            if len(group) == 1:
+                merged_figures.append(group[0])
+            else:
+                # Merge information from multiple detections
+                merged = self._merge_figure_data(group)
+                merged_figures.append(merged)
+        
+        # Sort by position or number
+        merged_figures.sort(key=lambda x: (x.get('position', 0), x.get('number', 0)))
+        
+        return merged_figures
+    
+    def _merge_figure_data(self, figures: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge data from multiple figure detections."""
+        if not figures:
+            return {}
+        
+        # Start with the figure with highest confidence
+        figures.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        merged = figures[0].copy()
+        
+        # Merge additional information from other detections
+        all_methods = [f.get('extraction_method', '') for f in figures]
+        merged['extraction_methods'] = list(set(all_methods))
+        
+        # Use the longest caption
+        captions = [f.get('caption', '') for f in figures if f.get('caption')]
+        if captions:
+            merged['caption'] = max(captions, key=len)
+        
+        # Average confidence scores
+        confidences = [f.get('confidence', 0) for f in figures]
+        merged['confidence'] = sum(confidences) / len(confidences)
+        
+        return merged
+    
+    def _enhance_figure_metadata(self, figures: List[Dict[str, Any]], text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Enhance figures with additional metadata."""
+        for figure in figures:
+            try:
+                # Detect figure type based on caption
+                figure['figure_type'] = self._detect_figure_type(figure.get('caption', ''))
+                
+                # Calculate position-based information
+                position = figure.get('position', 0)
+                if position > 0:
+                    # Estimate which section the figure is in
+                    figure['estimated_section'] = self._estimate_figure_section(text, position)
+                
+            except Exception as e:
+                self.logger.debug(f"Error enhancing figure metadata: {e}")
+                continue
+        
+        return figures
+    
+    def _detect_figure_type(self, caption: str) -> str:
+        """Detect the type of figure based on caption content."""
+        if not caption:
+            return "unknown"
+        
+        caption_lower = caption.lower()
+        
+        # Define type keywords
+        type_keywords = {
+            "chart": ["chart", "bar chart", "pie chart", "line chart"],
+            "graph": ["graph", "plot", "scatter", "histogram", "distribution"],
+            "diagram": ["diagram", "schematic", "flowchart", "workflow"],
+            "image": ["image", "photo", "photograph", "picture"],
+            "map": ["map", "geographical", "location"],
+            "screenshot": ["screenshot", "screen", "interface", "gui"],
+            "microscopy": ["microscopy", "microscope", "cell", "tissue"],
+            "comparison": ["comparison", "before", "after", "vs", "versus"]
+        }
+        
+        for fig_type, keywords in type_keywords.items():
+            if any(keyword in caption_lower for keyword in keywords):
+                return fig_type
+        
+        return "figure"
+    
+    def _estimate_figure_section(self, text: str, position: int) -> str:
+        """Estimate which document section contains the figure."""
+        # Find section headers before the figure position
+        section_patterns = [
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?abstract\s*(?:\n|$)", "abstract"),
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?introduction\s*(?:\n|$)", "introduction"),
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?(?:methods?|methodology)\s*(?:\n|$)", "methods"),
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?results?\s*(?:\n|$)", "results"),
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?discussion\s*(?:\n|$)", "discussion"),
+            (r"(?i)(?:^|\n)\s*(?:\d+\.?\s*)?conclusion\s*(?:\n|$)", "conclusion"),
+        ]
+        
+        current_section = "unknown"
+        text_before_figure = text[:position]
+        
+        for pattern, section_name in section_patterns:
+            matches = list(re.finditer(pattern, text_before_figure, re.MULTILINE))
+            if matches:
+                # Use the last matching section before the figure
+                current_section = section_name
+        
+        return current_section
+    
+    def _add_cross_references(self, items: List[Dict[str, Any]], text: str, item_type: str) -> List[Dict[str, Any]]:
+        """Add cross-reference information to figures/tables."""
+        for item in items:
+            try:
+                number = item.get('number', 0)
+                number_string = item.get('number_string', str(number))
+                
+                # Find references to this figure/table in text
+                ref_patterns = [
+                    rf"(?i)\b{item_type}\s*\.?\s*{re.escape(number_string)}\b",
+                    rf"(?i)\b{item_type}s?\s*{re.escape(number_string)}\b",
+                    rf"(?i)\bfig\.?\s*{re.escape(number_string)}\b" if item_type == "figure" else None,
+                ]
+                
+                references = []
+                for pattern in ref_patterns:
+                    if pattern:
+                        matches = list(re.finditer(pattern, text))
+                        references.extend([{
+                            "position": match.start(),
+                            "text": match.group(),
+                            "context": text[max(0, match.start()-50):match.end()+50]
+                        } for match in matches])
+                
+                item['cross_references'] = references
+                item['reference_count'] = len(references)
+                
+            except Exception as e:
+                self.logger.debug(f"Error adding cross-references: {e}")
+                continue
+        
+        return items
 
-    def _extract_tables(self, text: str, **kwargs) -> List[Dict[str, Any]]:
-        """Extract table references and captions."""
+    def _extract_tables(self, text: str, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract table references, captions, and actual table data with enhanced detection."""
         tables = []
+        
+        try:
+            # Method 1: Enhanced pattern-based extraction
+            pattern_tables = self._extract_tables_by_patterns(text, **kwargs)
+            tables.extend(pattern_tables)
+            
+            # Method 2: PDF library-specific extraction
+            if kwargs.get("extract_table_data", True):
+                library_tables = self._extract_tables_by_library(content, **kwargs)
+                tables.extend(library_tables)
+            
+            # Remove duplicates and merge information
+            tables = self._merge_and_deduplicate_tables(tables, **kwargs)
+            
+            # Enhance with metadata
+            tables = self._enhance_table_metadata(tables, text, **kwargs)
+            
+            return tables
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced table extraction failed, using basic method: {e}")
+            # Fallback to basic extraction
+            return self._extract_tables_basic_patterns(text, **kwargs)
 
-        # Pattern for table captions
+    def _extract_tables_by_patterns(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Extract tables using multiple improved regex patterns."""
+        tables = []
+        
+        # Multiple table patterns for better coverage
+        table_patterns = [
+            # Standard format: Table 1. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(table\s*\.?\s*(\d+)(?:[a-z]?)\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig(?:ure)?|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Alternative format: Table 1 - Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(table\s*(\d+)(?:[a-z]?)\s*[-\u2013\u2014]\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Format with parentheses: Table (1) Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(table\s*\(\s*(\d+)(?:[a-z]?)\s*\)\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Roman numerals: Table I. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(table\s*\.?\s*([IVX]+)\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            ),
+            # Mixed numbering: Table 1a. Caption
+            re.compile(
+                r"(?i)(?:^|\n)\s*(table\s*\.?\s*(\d+[a-z])\s*[\.:]?\s*([^\n]{1,500}?)(?=\n\s*(?:fig|table|\d+\.|$)|$))",
+                re.MULTILINE | re.DOTALL
+            )
+        ]
+        
+        for pattern_idx, pattern in enumerate(table_patterns):
+            for match in pattern.finditer(text):
+                try:
+                    full_match = match.group(1)
+                    table_num = match.group(2)
+                    caption = match.group(3).strip() if match.group(3) else ""
+                    
+                    if table_num and len(caption) > 5:  # Minimum caption length
+                        # Clean caption
+                        caption = self._clean_caption(caption)
+                        
+                        # Convert roman numerals to numbers if needed
+                        if re.match(r'^[IVX]+$', table_num):
+                            numeric_num = self._roman_to_int(table_num)
+                        else:
+                            # Extract numeric part for mixed formats like "1a"
+                            numeric_match = re.match(r'(\d+)', table_num)
+                            numeric_num = int(numeric_match.group(1)) if numeric_match else 0
+                        
+                        table_data = {
+                            "id": f"table_{table_num}",
+                            "number": numeric_num,
+                            "number_string": table_num,
+                            "caption": caption,
+                            "full_caption": full_match,
+                            "type": "table",
+                            "position": match.start(),
+                            "end_position": match.end(),
+                            "extraction_method": f"pattern_matching_{pattern_idx + 1}",
+                            "confidence": self._calculate_table_confidence(caption, table_num),
+                            "caption_length": len(caption)
+                        }
+                        
+                        tables.append(table_data)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing table match: {e}")
+                    continue
+        
+        return tables
+    
+    def _extract_tables_by_library(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract tables using PDF library-specific methods."""
+        tables = []
+        extraction_method = content.get("extraction_method", "unknown")
+        
+        try:
+            if extraction_method == "pdfplumber" and PDFPLUMBER_AVAILABLE:
+                tables.extend(self._extract_tables_pdfplumber(content, **kwargs))
+            elif extraction_method == "fitz" and FITZ_AVAILABLE:
+                tables.extend(self._extract_tables_fitz(content, **kwargs))
+                
+        except Exception as e:
+            self.logger.debug(f"Library-specific table extraction failed: {e}")
+        
+        return tables
+    
+    def _extract_tables_pdfplumber(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract tables using pdfplumber to detect actual table structures."""
+        tables = []
+        
+        try:
+            pdf = content.get("raw_content")
+            if not pdf:
+                return tables
+                
+            for page_num, page in enumerate(content.get("pages", [])):
+                try:
+                    # Extract tables from page
+                    page_tables = page.extract_tables()
+                    
+                    for table_index, table_data in enumerate(page_tables):
+                        if not table_data or len(table_data) < 2:  # Skip empty or single-row tables
+                            continue
+                            
+                        # Process table structure
+                        headers = table_data[0] if table_data else []
+                        rows = table_data[1:] if len(table_data) > 1 else []
+                        
+                        # Clean headers and data
+                        clean_headers = [str(h).strip() if h else "" for h in headers]
+                        clean_rows = []
+                        for row in rows:
+                            clean_row = [str(cell).strip() if cell else "" for cell in row]
+                            clean_rows.append(clean_row)
+                        
+                        # Calculate table dimensions
+                        num_cols = len(clean_headers)
+                        num_rows = len(clean_rows)
+                        
+                        table_info = {
+                            "id": f"pdfplumber_table_{page_num + 1}_{table_index + 1}",
+                            "number": table_index + 1,
+                            "type": "table",
+                            "page": page_num + 1,
+                            "extraction_method": "pdfplumber_table_detection",
+                            "confidence": 0.9,  # High confidence for actual detected tables
+                            "structure": {
+                                "headers": clean_headers,
+                                "rows": clean_rows,
+                                "num_columns": num_cols,
+                                "num_rows": num_rows,
+                                "total_cells": num_cols * num_rows
+                            },
+                            "raw_data": table_data
+                        }
+                        
+                        # Try to detect table boundaries
+                        try:
+                            table_bbox = self._find_table_bbox(page, table_data)
+                            if table_bbox:
+                                table_info["bbox"] = table_bbox
+                        except Exception as e:
+                            self.logger.debug(f"Could not determine table bbox: {e}")
+                        
+                        tables.append(table_info)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing pdfplumber page {page_num}: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.debug(f"pdfplumber table extraction failed: {e}")
+        
+        return tables
+    
+    def _extract_tables_fitz(self, content: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
+        """Extract tables using PyMuPDF (fitz) to detect table-like structures."""
+        tables = []
+        
+        try:
+            doc = content.get("raw_content")
+            if not doc:
+                return tables
+                
+            for page_num, page in enumerate(content.get("pages", [])):
+                try:
+                    # Get text with layout information
+                    text_dict = page.get_text("dict")
+                    
+                    # Look for table-like structures using text blocks
+                    table_candidates = self._detect_table_structures_fitz(text_dict)
+                    
+                    for table_index, table_info in enumerate(table_candidates):
+                        table_data = {
+                            "id": f"fitz_table_{page_num + 1}_{table_index + 1}",
+                            "number": table_index + 1,
+                            "type": "table",
+                            "page": page_num + 1,
+                            "extraction_method": "fitz_structure_detection",
+                            "confidence": table_info.get("confidence", 0.6),
+                            "structure": table_info.get("structure", {}),
+                            "bbox": table_info.get("bbox", None)
+                        }
+                        
+                        tables.append(table_data)
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing fitz page {page_num}: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.debug(f"PyMuPDF table extraction failed: {e}")
+        
+        return tables
+    
+    def _extract_tables_basic_patterns(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Fallback basic pattern extraction (original implementation)."""
+        tables = []
+        
+        # Original simple pattern
         table_pattern = re.compile(
             r"(?i)(table\s*\.?\s*(\d+)(?:\s*[:.]\s*)?(.{0,200}?)(?=\n\s*(?:fig|table|\d+\.|$))|$)",
             re.MULTILINE | re.DOTALL,
@@ -948,11 +2030,349 @@ class PDFParser(AbstractDocumentParser):
                         "caption": caption,
                         "type": "table",
                         "position": match.start(),
-                        "extraction_method": "pattern_matching",
+                        "extraction_method": "basic_pattern_matching",
+                        "confidence": 0.6
                     }
                 )
 
         return tables
+    
+    def _find_table_bbox(self, page, table_data) -> Optional[Dict[str, float]]:
+        """Try to find the bounding box of a table in the page."""
+        try:
+            # This is a simplified approach - in practice, you'd need more sophisticated
+            # methods to accurately determine table boundaries
+            if not table_data:
+                return None
+            
+            # For now, return None as this requires more complex implementation
+            # involving text positioning analysis
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Error finding table bbox: {e}")
+            return None
+    
+    def _detect_table_structures_fitz(self, text_dict: Dict) -> List[Dict[str, Any]]:
+        """Detect table-like structures from PyMuPDF text dictionary."""
+        table_candidates = []
+        
+        try:
+            # This is a simplified implementation
+            # A full implementation would analyze text block positions, 
+            # alignment, and spacing to identify table structures
+            
+            blocks = text_dict.get("blocks", [])
+            
+            # Look for text blocks that might form tables
+            aligned_blocks = self._find_aligned_text_blocks(blocks)
+            
+            for candidate in aligned_blocks:
+                if self._looks_like_table(candidate):
+                    table_info = {
+                        "structure": self._analyze_table_structure(candidate),
+                        "bbox": candidate.get("bbox"),
+                        "confidence": self._calculate_table_structure_confidence(candidate)
+                    }
+                    table_candidates.append(table_info)
+        
+        except Exception as e:
+            self.logger.debug(f"Error detecting table structures: {e}")
+        
+        return table_candidates
+    
+    def _find_aligned_text_blocks(self, blocks: List) -> List[Dict]:
+        """Find text blocks that appear to be aligned (potential table cells)."""
+        # Simplified implementation - would need more sophisticated alignment detection
+        aligned_groups = []
+        
+        try:
+            text_blocks = [block for block in blocks if block.get("type") == 0]  # Text blocks
+            
+            # Group blocks by similar y-coordinates (rows)
+            y_groups = {}
+            for block in text_blocks:
+                bbox = block.get("bbox", [])
+                if len(bbox) >= 4:
+                    y_pos = round(bbox[1], 1)  # Top y-coordinate
+                    if y_pos not in y_groups:
+                        y_groups[y_pos] = []
+                    y_groups[y_pos].append(block)
+            
+            # Look for groups with multiple blocks (potential table rows)
+            for y_pos, blocks_in_row in y_groups.items():
+                if len(blocks_in_row) >= 2:  # At least 2 columns
+                    aligned_groups.append({
+                        "blocks": blocks_in_row,
+                        "y_position": y_pos,
+                        "num_columns": len(blocks_in_row)
+                    })
+        
+        except Exception as e:
+            self.logger.debug(f"Error finding aligned blocks: {e}")
+        
+        return aligned_groups
+    
+    def _looks_like_table(self, candidate: Dict) -> bool:
+        """Determine if a candidate structure looks like a table."""
+        try:
+            blocks = candidate.get("blocks", [])
+            if len(blocks) < 4:  # Need at least 2x2 structure
+                return False
+            
+            # Check for consistent column alignment
+            x_positions = []
+            for block in blocks:
+                bbox = block.get("bbox", [])
+                if len(bbox) >= 4:
+                    x_positions.append(bbox[0])  # Left x-coordinate
+            
+            # Simple check: if we have consistent x-positions, might be a table
+            unique_x = len(set(round(x, 1) for x in x_positions))
+            return unique_x >= 2 and len(blocks) >= unique_x * 2
+            
+        except Exception:
+            return False
+    
+    def _analyze_table_structure(self, candidate: Dict) -> Dict[str, Any]:
+        """Analyze the structure of a potential table."""
+        try:
+            blocks = candidate.get("blocks", [])
+            
+            structure = {
+                "estimated_rows": 1,
+                "estimated_columns": candidate.get("num_columns", 1),
+                "total_blocks": len(blocks),
+                "analysis_method": "text_block_alignment"
+            }
+            
+            return structure
+            
+        except Exception:
+            return {"analysis_method": "failed"}
+    
+    def _calculate_table_structure_confidence(self, candidate: Dict) -> float:
+        """Calculate confidence score for table structure detection."""
+        try:
+            num_blocks = len(candidate.get("blocks", []))
+            num_columns = candidate.get("num_columns", 1)
+            
+            confidence = 0.5  # Base confidence
+            
+            # More blocks suggest better structure
+            if num_blocks >= 6:
+                confidence += 0.2
+            elif num_blocks >= 4:
+                confidence += 0.1
+            
+            # More columns suggest table-like structure
+            if num_columns >= 3:
+                confidence += 0.2
+            elif num_columns >= 2:
+                confidence += 0.1
+            
+            return min(0.9, confidence)
+            
+        except Exception:
+            return 0.3
+    
+    def _calculate_table_confidence(self, caption: str, table_num: str) -> float:
+        """Calculate confidence score for table extraction."""
+        confidence = 0.7  # Base confidence
+        
+        # Adjust based on caption length
+        if len(caption) > 50:
+            confidence += 0.1
+        elif len(caption) < 10:
+            confidence -= 0.2
+        
+        # Adjust based on table number format
+        if table_num.isdigit():
+            confidence += 0.1
+        elif re.match(r'\d+[a-z]', table_num):
+            confidence += 0.05
+        
+        # Check for caption quality indicators
+        quality_indicators = [
+            'shows', 'presents', 'lists', 'summarizes', 'compares',
+            'data', 'results', 'statistics', 'measurements', 'values'
+        ]
+        
+        caption_lower = caption.lower()
+        for indicator in quality_indicators:
+            if indicator in caption_lower:
+                confidence += 0.05
+                break
+        
+        return min(1.0, max(0.1, confidence))
+    
+    def _merge_and_deduplicate_tables(self, tables: List[Dict[str, Any]], **kwargs) -> List[Dict[str, Any]]:
+        """Merge and deduplicate tables from different extraction methods."""
+        if not tables:
+            return tables
+        
+        # Group tables by number for deduplication
+        table_groups = {}
+        
+        for table in tables:
+            key = table.get('number', 0)
+            if key not in table_groups:
+                table_groups[key] = []
+            table_groups[key].append(table)
+        
+        merged_tables = []
+        
+        for number, group in table_groups.items():
+            if len(group) == 1:
+                merged_tables.append(group[0])
+            else:
+                # Merge information from multiple detections
+                merged = self._merge_table_data(group)
+                merged_tables.append(merged)
+        
+        # Sort by position or number
+        merged_tables.sort(key=lambda x: (x.get('position', 0), x.get('number', 0)))
+        
+        return merged_tables
+    
+    def _merge_table_data(self, tables: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge data from multiple table detections."""
+        if not tables:
+            return {}
+        
+        # Start with the table with highest confidence
+        tables.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        merged = tables[0].copy()
+        
+        # Merge additional information from other detections
+        all_methods = [t.get('extraction_method', '') for t in tables]
+        merged['extraction_methods'] = list(set(all_methods))
+        
+        # Use the longest caption
+        captions = [t.get('caption', '') for t in tables if t.get('caption')]
+        if captions:
+            merged['caption'] = max(captions, key=len)
+        
+        # Merge structural information
+        structures = [t.get('structure', {}) for t in tables if t.get('structure')]
+        if structures:
+            # Use the most detailed structure
+            merged['structure'] = max(structures, key=lambda s: len(str(s)))
+        
+        # Average confidence scores
+        confidences = [t.get('confidence', 0) for t in tables]
+        merged['confidence'] = sum(confidences) / len(confidences)
+        
+        return merged
+    
+    def _enhance_table_metadata(self, tables: List[Dict[str, Any]], text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Enhance tables with additional metadata."""
+        for table in tables:
+            try:
+                # Detect table type based on caption and structure
+                table['table_type'] = self._detect_table_type(
+                    table.get('caption', ''), 
+                    table.get('structure', {})
+                )
+                
+                # Calculate position-based information
+                position = table.get('position', 0)
+                if position > 0:
+                    # Estimate which section the table is in
+                    table['estimated_section'] = self._estimate_figure_section(text, position)
+                
+                # Add data quality metrics if structure is available
+                structure = table.get('structure', {})
+                if structure:
+                    table['data_quality'] = self._assess_table_data_quality(structure)
+                
+            except Exception as e:
+                self.logger.debug(f"Error enhancing table metadata: {e}")
+                continue
+        
+        return tables
+    
+    def _detect_table_type(self, caption: str, structure: Dict[str, Any]) -> str:
+        """Detect the type of table based on caption and structure."""
+        if not caption:
+            return "data_table"
+        
+        caption_lower = caption.lower()
+        
+        # Define type keywords
+        type_keywords = {
+            "summary": ["summary", "overview", "main", "key"],
+            "comparison": ["comparison", "vs", "versus", "compared", "between"],
+            "statistics": ["statistics", "statistical", "mean", "median", "std"],
+            "results": ["results", "findings", "outcomes", "measurements"],
+            "parameters": ["parameters", "settings", "configuration", "specs"],
+            "demographics": ["demographics", "population", "characteristics", "baseline"],
+            "correlation": ["correlation", "relationship", "association"],
+            "performance": ["performance", "accuracy", "precision", "recall"]
+        }
+        
+        for table_type, keywords in type_keywords.items():
+            if any(keyword in caption_lower for keyword in keywords):
+                return table_type
+        
+        # Use structure information if available
+        if structure:
+            num_cols = structure.get('num_columns', 0)
+            num_rows = structure.get('num_rows', 0)
+            
+            if num_cols >= 5 and num_rows >= 10:
+                return "large_data_table"
+            elif num_cols == 2:
+                return "key_value_table"
+        
+        return "data_table"
+    
+    def _assess_table_data_quality(self, structure: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess the quality of extracted table data."""
+        quality = {
+            "completeness": 0.0,
+            "consistency": 0.0,
+            "overall_score": 0.0,
+            "issues": []
+        }
+        
+        try:
+            headers = structure.get('headers', [])
+            rows = structure.get('rows', [])
+            
+            if not headers or not rows:
+                quality['issues'].append("missing_structure")
+                return quality
+            
+            # Assess completeness
+            total_cells = len(headers) * len(rows)
+            filled_cells = 0
+            
+            for row in rows:
+                for cell in row:
+                    if cell and str(cell).strip():
+                        filled_cells += 1
+            
+            quality['completeness'] = filled_cells / total_cells if total_cells > 0 else 0
+            
+            # Assess consistency (column count consistency)
+            expected_cols = len(headers)
+            consistent_rows = sum(1 for row in rows if len(row) == expected_cols)
+            quality['consistency'] = consistent_rows / len(rows) if rows else 0
+            
+            # Calculate overall score
+            quality['overall_score'] = (quality['completeness'] + quality['consistency']) / 2
+            
+            # Identify issues
+            if quality['completeness'] < 0.8:
+                quality['issues'].append("incomplete_data")
+            if quality['consistency'] < 0.9:
+                quality['issues'].append("inconsistent_structure")
+            
+        except Exception as e:
+            quality['issues'].append(f"assessment_error: {e}")
+        
+        return quality
 
     def _extract_and_validate_doi(self, text: str) -> Tuple[str, float]:
         """
