@@ -104,7 +104,7 @@
 - [x] **AIM2-031-02** Write unit tests for XML parser
 - [x] **AIM2-031-03** Write unit tests for text extraction
 - [x] **AIM2-031-04** Create AbstractDocumentParser
-- [ ] **AIM2-031-05** Implement PDF text extraction
+- [x] **AIM2-031-05** Implement PDF text extraction
 - [ ] **AIM2-031-06** Add PDF metadata extraction
 - [ ] **AIM2-031-07** Create XML parser for PMC
 - [ ] **AIM2-031-08** Implement section detection
