@@ -94,7 +94,7 @@
 - [x] **AIM2-013-05** Implement ontology loading
 - [x] **AIM2-013-06** Add multi-source support
 - [x] **AIM2-013-07** Create caching mechanism
-- [ ] **AIM2-013-08** Implement statistics calculator
+- [x] **AIM2-013-08** Implement statistics calculator
 - [ ] **AIM2-013-09** Add export functionality
 - [ ] **AIM2-013-10** Create merge operations
 - [ ] **AIM2-013-11** Implement subset extraction
