@@ -27,12 +27,18 @@ from typing import Any, Dict, List, Optional, Union
 
 # Import the models and parsers
 try:
+    from ..aim2_utils.config_manager import ConfigManager
     from .models import Ontology
     from .parsers import auto_detect_parser
 except ImportError:
     # For development/testing scenarios
     from models import Ontology
     from parsers import auto_detect_parser
+
+    try:
+        from aim2_project.aim2_utils.config_manager import ConfigManager
+    except ImportError:
+        ConfigManager = None
 
 
 @dataclass
@@ -138,9 +144,17 @@ class OntologyManager:
                     },
                 )
 
-            # Only count as cache miss if caching is actually enabled and allowed
-            if self.enable_caching and self.cache_size_limit > 0:
+            # Count as cache miss based on caching configuration:
+            # - When caching is disabled entirely (enable_caching=False), always count as cache miss
+            # - When caching is enabled with size limit > 0, count as cache miss
+            # - When caching is enabled but size limit is 0, don't count (no cache system active)
+            if not self.enable_caching:
+                # Caching disabled entirely - always count as miss for statistics purposes
                 self.load_stats["cache_misses"] += 1
+            elif self.enable_caching and self.cache_size_limit > 0:
+                # Caching enabled with valid limit - count as miss since we didn't hit cache
+                self.load_stats["cache_misses"] += 1
+            # If enable_caching=True but cache_size_limit=0, don't count misses
 
             # Auto-detect and create parser
             parser = auto_detect_parser(file_path=source)
@@ -263,6 +277,457 @@ class OntologyManager:
                 )
 
         return results
+
+    def load_from_config(
+        self,
+        config_manager: Optional[ConfigManager] = None,
+        config_path: Optional[str] = None,
+        source_filter: Optional[List[str]] = None,
+        enabled_only: bool = True,
+    ) -> List[LoadResult]:
+        """Load ontologies from configuration file.
+
+        This method reads ontology sources from the configuration and loads all
+        enabled sources automatically. It provides configuration-based automation
+        for ontology loading without requiring manual specification of file paths.
+
+        Args:
+            config_manager: Optional ConfigManager instance to use. If None, creates a new one.
+            config_path: Optional path to configuration file. If None, uses default config.
+            source_filter: Optional list of source names to load. If None, loads all enabled sources.
+            enabled_only: Whether to load only enabled sources (default: True).
+
+        Returns:
+            List[LoadResult]: List of results for each configured source
+
+        Raises:
+            OntologyManagerError: If configuration loading fails or no valid sources found
+        """
+        start_time = time.time()
+        results = []
+
+        try:
+            # Get or create config manager
+            if config_manager is None:
+                if ConfigManager is None:
+                    raise OntologyManagerError(
+                        "ConfigManager not available. Please provide a config_manager instance."
+                    )
+                config_manager = ConfigManager()
+
+                # Load configuration
+                if config_path:
+                    config_manager.load_config(config_path)
+                else:
+                    config_manager.load_default_config()
+
+            # Get ontology sources from configuration
+            try:
+                ontology_sources = config_manager.get("ontology.sources", {})
+            except KeyError:
+                raise OntologyManagerError(
+                    "No ontology sources configuration found. "
+                    "Expected 'ontology.sources' section in configuration."
+                )
+
+            if not ontology_sources:
+                self.logger.warning("No ontology sources configured")
+                return results
+
+            # Filter sources based on criteria
+            sources_to_load = self._filter_configured_sources(
+                ontology_sources, source_filter, enabled_only
+            )
+
+            if not sources_to_load:
+                msg = "No valid ontology sources found in configuration"
+                if enabled_only:
+                    msg += " (only enabled sources were considered)"
+                if source_filter:
+                    msg += f" (filtered by: {source_filter})"
+
+                self.logger.warning(msg)
+                return results
+
+            self.logger.info(
+                f"Loading {len(sources_to_load)} ontology sources from configuration"
+            )
+
+            # Load each configured source
+            for source_name, source_config in sources_to_load.items():
+                result = self._load_configured_source(source_name, source_config)
+                results.append(result)
+
+            # Log summary
+            successful = sum(1 for r in results if r.success)
+            failed = len(results) - successful
+            total_time = time.time() - start_time
+
+            self.logger.info(
+                f"Configuration-based loading completed in {total_time:.3f}s: "
+                f"{successful} successful, {failed} failed"
+            )
+
+            return results
+
+        except Exception as e:
+            error_msg = f"Failed to load ontologies from configuration: {str(e)}"
+            self.logger.exception(error_msg)
+            raise OntologyManagerError(error_msg)
+
+    def _filter_configured_sources(
+        self,
+        ontology_sources: Dict[str, Any],
+        source_filter: Optional[List[str]],
+        enabled_only: bool,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Filter configured ontology sources based on criteria.
+
+        Args:
+            ontology_sources: Dictionary of ontology source configurations
+            source_filter: Optional list of source names to include
+            enabled_only: Whether to include only enabled sources
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Filtered source configurations
+        """
+        filtered_sources = {}
+
+        for source_name, source_config in ontology_sources.items():
+            # Check if source should be filtered by name
+            if source_filter and source_name not in source_filter:
+                continue
+
+            # Check if source should be filtered by enabled status
+            if enabled_only and not source_config.get("enabled", False):
+                self.logger.debug(f"Skipping disabled source: {source_name}")
+                continue
+
+            # Validate source configuration
+            if not isinstance(source_config, dict):
+                self.logger.warning(
+                    f"Invalid configuration for source {source_name}: not a dictionary"
+                )
+                continue
+
+            if not source_config.get("local_path") and not source_config.get("url"):
+                self.logger.warning(
+                    f"Source {source_name} has no local_path or url configured"
+                )
+                continue
+
+            filtered_sources[source_name] = source_config
+
+        return filtered_sources
+
+    def _load_configured_source(
+        self, source_name: str, source_config: Dict[str, Any]
+    ) -> LoadResult:
+        """Load a single configured ontology source.
+
+        Args:
+            source_name: Name of the source (e.g., 'chebi', 'gene_ontology')
+            source_config: Configuration dictionary for the source
+
+        Returns:
+            LoadResult: Result of the load operation
+        """
+        start_time = time.time()
+
+        try:
+            # Determine the source path to use
+            local_path = source_config.get("local_path")
+            url = source_config.get("url")
+
+            # Prefer local path if it exists and is accessible
+            source_path = None
+            if local_path:
+                local_path_obj = Path(local_path)
+                if local_path_obj.exists():
+                    source_path = str(local_path_obj.resolve())
+                    self.logger.debug(
+                        f"Using local path for {source_name}: {source_path}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"Local path not found for {source_name}: {local_path}"
+                    )
+
+            # Fall back to URL if local path is not available
+            if not source_path and url:
+                source_path = url
+                self.logger.debug(f"Using URL for {source_name}: {source_path}")
+
+            if not source_path:
+                error_msg = f"No valid source path found for {source_name}"
+                return LoadResult(
+                    success=False,
+                    source_path=source_name,
+                    load_time=time.time() - start_time,
+                    errors=[error_msg],
+                    metadata={"source_name": source_name, "config": source_config},
+                )
+
+            # Load the ontology
+            self.logger.info(
+                f"Loading ontology source: {source_name} from {source_path}"
+            )
+            result = self.load_ontology(source_path)
+
+            # Add source metadata to result
+            if result.metadata is None:
+                result.metadata = {}
+
+            result.metadata.update(
+                {
+                    "source_name": source_name,
+                    "config": source_config,
+                    "configuration_based": True,
+                    "url": url,
+                    "local_path": local_path,
+                }
+            )
+
+            if result.success:
+                self.logger.info(
+                    f"Successfully loaded {source_name} from configuration"
+                )
+            else:
+                self.logger.warning(
+                    f"Failed to load {source_name} from configuration: {result.errors}"
+                )
+
+            return result
+
+        except Exception as e:
+            error_msg = f"Error loading configured source {source_name}: {str(e)}"
+            self.logger.exception(error_msg)
+            return LoadResult(
+                success=False,
+                source_path=source_name,
+                load_time=time.time() - start_time,
+                errors=[error_msg],
+                metadata={"source_name": source_name, "config": source_config},
+            )
+
+    def validate_ontology_sources_config(
+        self,
+        config_manager: Optional[ConfigManager] = None,
+        config_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Validate ontology sources configuration.
+
+        Validates the ontology sources configuration for completeness and correctness.
+        Checks for required fields, accessible paths, and valid URLs.
+
+        Args:
+            config_manager: Optional ConfigManager instance to use. If None, creates a new one.
+            config_path: Optional path to configuration file. If None, uses default config.
+
+        Returns:
+            Dict[str, Any]: Validation report with status, errors, and warnings
+
+        Raises:
+            OntologyManagerError: If configuration cannot be loaded
+        """
+        validation_report = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "source_status": {},
+            "summary": {
+                "total_sources": 0,
+                "valid_sources": 0,
+                "enabled_sources": 0,
+                "accessible_local_paths": 0,
+                "valid_urls": 0,
+            },
+        }
+
+        try:
+            # Get or create config manager
+            if config_manager is None:
+                if ConfigManager is None:
+                    raise OntologyManagerError(
+                        "ConfigManager not available. Please provide a config_manager instance."
+                    )
+                config_manager = ConfigManager()
+
+                # Load configuration
+                if config_path:
+                    config_manager.load_config(config_path)
+                else:
+                    config_manager.load_default_config()
+
+            # Get ontology sources from configuration
+            try:
+                ontology_sources = config_manager.get("ontology.sources", {})
+            except KeyError:
+                validation_report["valid"] = False
+                validation_report["errors"].append(
+                    "No ontology sources configuration found. Expected 'ontology.sources' section."
+                )
+                return validation_report
+
+            if not ontology_sources:
+                validation_report["warnings"].append("No ontology sources configured")
+                return validation_report
+
+            validation_report["summary"]["total_sources"] = len(ontology_sources)
+
+            # Validate each source
+            for source_name, source_config in ontology_sources.items():
+                source_status = self._validate_single_source(source_name, source_config)
+                validation_report["source_status"][source_name] = source_status
+
+                # Update summary counts
+                if source_status["valid"]:
+                    validation_report["summary"]["valid_sources"] += 1
+
+                if source_config.get("enabled", False):
+                    validation_report["summary"]["enabled_sources"] += 1
+
+                if source_status["local_path_accessible"]:
+                    validation_report["summary"]["accessible_local_paths"] += 1
+
+                if source_status["url_valid"]:
+                    validation_report["summary"]["valid_urls"] += 1
+
+                # Collect errors and warnings
+                validation_report["errors"].extend(source_status["errors"])
+                validation_report["warnings"].extend(source_status["warnings"])
+
+            # Overall validation status
+            if validation_report["errors"]:
+                validation_report["valid"] = False
+
+            return validation_report
+
+        except Exception as e:
+            error_msg = f"Failed to validate ontology sources configuration: {str(e)}"
+            self.logger.exception(error_msg)
+            raise OntologyManagerError(error_msg)
+
+    def _validate_single_source(
+        self, source_name: str, source_config: Any
+    ) -> Dict[str, Any]:
+        """Validate a single ontology source configuration.
+
+        Args:
+            source_name: Name of the source
+            source_config: Configuration for the source
+
+        Returns:
+            Dict[str, Any]: Validation status for the source
+        """
+        status = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "local_path_accessible": False,
+            "url_valid": False,
+            "has_required_fields": False,
+        }
+
+        # Check if config is a dictionary
+        if not isinstance(source_config, dict):
+            status["valid"] = False
+            status["errors"].append(
+                f"Source '{source_name}' configuration is not a dictionary"
+            )
+            return status
+
+        # Check required fields
+        required_fields = ["enabled"]
+        optional_fields = [
+            "local_path",
+            "url",
+            "update_frequency",
+            "include_deprecated",
+        ]
+
+        for field in required_fields:
+            if field not in source_config:
+                status["errors"].append(
+                    f"Source '{source_name}' missing required field: {field}"
+                )
+
+        # Check that at least one of local_path or url is provided
+        has_local_path = bool(source_config.get("local_path"))
+        has_url = bool(source_config.get("url"))
+
+        if not has_local_path and not has_url:
+            status["valid"] = False
+            status["errors"].append(
+                f"Source '{source_name}' must have either 'local_path' or 'url'"
+            )
+        else:
+            status["has_required_fields"] = True
+
+        # Validate local path if provided
+        if has_local_path:
+            local_path = source_config["local_path"]
+            try:
+                local_path_obj = Path(local_path)
+                if local_path_obj.exists():
+                    status["local_path_accessible"] = True
+                else:
+                    status["warnings"].append(
+                        f"Source '{source_name}' local path does not exist: {local_path}"
+                    )
+            except Exception as e:
+                status["warnings"].append(
+                    f"Source '{source_name}' local path validation error: {str(e)}"
+                )
+
+        # Validate URL if provided
+        if has_url:
+            url = source_config["url"]
+            if self._is_valid_url(url):
+                status["url_valid"] = True
+            else:
+                status["warnings"].append(
+                    f"Source '{source_name}' has invalid URL format: {url}"
+                )
+
+        # Check enabled field type
+        enabled = source_config.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            status["warnings"].append(
+                f"Source '{source_name}' 'enabled' field should be boolean, got {type(enabled)}"
+            )
+
+        # Set overall validity
+        if status["errors"]:
+            status["valid"] = False
+
+        return status
+
+    def _is_valid_url(self, url: str) -> bool:
+        """Basic URL validation.
+
+        Args:
+            url: URL to validate
+
+        Returns:
+            bool: True if URL appears valid
+        """
+        try:
+            import re
+
+            # Basic URL pattern check
+            url_pattern = re.compile(
+                r"^https?://"  # http:// or https://
+                r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|"  # domain...
+                r"localhost|"  # localhost...
+                r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
+                r"(?::\d+)?"  # optional port
+                r"(?:/?|[/?]\S+)$",
+                re.IGNORECASE,
+            )
+            return url_pattern.match(url) is not None
+        except Exception:
+            return False
 
     def get_ontology(self, ontology_id: str) -> Optional[Ontology]:
         """Get an ontology by ID.
