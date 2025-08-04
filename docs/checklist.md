@@ -87,8 +87,8 @@
 - [x] **AIM2-012-11** Add progress reporting
 - [x] **AIM2-012-12** Create format auto-detection
 - [x] **AIM2-012-13** Run all parser unit tests
-- [ ] **AIM2-013-01** Write unit tests for loading logic
-- [ ] **AIM2-013-02** Write unit tests for caching
+- [x] **AIM2-013-01** Write unit tests for loading logic
+- [x] **AIM2-013-02** Write unit tests for caching
 - [ ] **AIM2-013-03** Write unit tests for statistics
 - [ ] **AIM2-013-04** Create OntologyManager class
 - [ ] **AIM2-013-05** Implement ontology loading
