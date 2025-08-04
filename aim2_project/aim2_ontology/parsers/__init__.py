@@ -12,6 +12,7 @@ Core Parser Classes:
     OWLParser: Concrete OWL parser implementation for RDF/OWL ontologies
     CSVParser: Concrete CSV parser implementation with dialect auto-detection
     JSONLDParser: Concrete JSON-LD parser implementation with full JSON-LD transformation
+    PDFParser: Concrete PDF parser implementation for scientific document processing
 
 Format Auto-Detection System:
     detect_format_from_extension: Detect format based on file extension analysis
@@ -140,6 +141,7 @@ __all__ = [
     "OWLParser",
     "CSVParser",
     "JSONLDParser",
+    "PDFParser",
     # Format auto-detection functions
     "detect_format_from_extension",
     "detect_format_from_content",
@@ -9176,6 +9178,10 @@ def get_parser_for_format(format_name: str) -> Optional[type]:
             "tsv": CSVParser,
             "txt": CSVParser,
         }
+        
+        # Add PDF parser if available
+        if PDFParser is not None:
+            format_to_parser["pdf"] = PDFParser
 
         parser_class = format_to_parser.get(format_lower)
         if parser_class:
@@ -9302,3 +9308,10 @@ def auto_detect_parser(
     except Exception as e:
         logger.error(f"Error in auto-detection process: {str(e)}")
         return None
+
+
+# Import concrete parser implementations
+try:
+    from .pdf_parser import PDFParser
+except ImportError:
+    PDFParser = None
