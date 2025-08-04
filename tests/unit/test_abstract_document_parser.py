@@ -883,34 +883,204 @@ class TestAbstractDocumentParserValidation:
 class TestAbstractDocumentParserConfiguration:
     """Test document-specific option handling."""
 
-    def test_encoding_detection(self):
-        """Test encoding detection functionality."""
+    def test_encoding_detection_bom(self):
+        """Test BOM (Byte Order Mark) detection."""
         parser = ConcreteDocumentParser("test_parser")
 
-        # Test UTF-8 content
-        utf8_content = "Test content with UTF-8: café".encode("utf-8")
+        # Test UTF-8 BOM
+        utf8_bom_content = b"\xef\xbb\xbfHello, world!"
+        encoding = parser.detect_encoding(utf8_bom_content)
+        assert encoding == "utf-8-sig"
+
+        # Test UTF-16 LE BOM
+        utf16_le_bom_content = b"\xff\xfeH\x00e\x00l\x00l\x00o\x00"
+        encoding = parser.detect_encoding(utf16_le_bom_content)
+        assert encoding == "utf-16-le"
+
+        # Test UTF-16 BE BOM
+        utf16_be_bom_content = b"\xfe\xff\x00H\x00e\x00l\x00l\x00o"
+        encoding = parser.detect_encoding(utf16_be_bom_content)
+        assert encoding == "utf-16-be"
+
+        # Test UTF-32 LE BOM
+        utf32_le_bom_content = b"\xff\xfe\x00\x00H\x00\x00\x00e\x00\x00\x00"
+        encoding = parser.detect_encoding(utf32_le_bom_content)
+        assert encoding == "utf-32-le"
+
+        # Test UTF-32 BE BOM
+        utf32_be_bom_content = b"\x00\x00\xfe\xff\x00\x00\x00H\x00\x00\x00e"
+        encoding = parser.detect_encoding(utf32_be_bom_content)
+        assert encoding == "utf-32-be"
+
+    def test_encoding_detection_chardet_success(self):
+        """Test successful chardet encoding detection."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test UTF-8 content with high confidence
+        utf8_content = "Test content with UTF-8: café müsli naïve".encode("utf-8")
         with patch(
-            "chardet.detect", return_value={"encoding": "utf-8", "confidence": 0.9}
+            "chardet.detect", return_value={"encoding": "UTF-8", "confidence": 0.9}
         ):
             encoding = parser.detect_encoding(utf8_content)
-            assert encoding == "utf-8"
+            assert encoding == "utf-8"  # Should be normalized to lowercase
 
-        # Test low confidence fallback
+        # Test Latin-1 content with high confidence
+        latin1_content = "Test content with Latin-1: café".encode("latin-1")
         with patch(
-            "chardet.detect", return_value={"encoding": "iso-8859-1", "confidence": 0.5}
+            "chardet.detect", return_value={"encoding": "ISO-8859-1", "confidence": 0.85}
+        ):
+            encoding = parser.detect_encoding(latin1_content)
+            assert encoding == "iso-8859-1"
+
+    def test_encoding_detection_chardet_low_confidence(self):
+        """Test chardet low confidence fallback to common encodings."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test with low confidence - should fall back to trying encodings
+        utf8_content = "Simple ASCII content".encode("utf-8")
+        with patch(
+            "chardet.detect", return_value={"encoding": "ascii", "confidence": 0.5}
         ):
             encoding = parser.detect_encoding(utf8_content)
-            assert encoding == "utf-8"  # Should fall back to utf-8
+            assert encoding == "utf-8"  # Should successfully decode as UTF-8
 
-        # Test without chardet available
+        # Test content that only works with latin-1
+        latin1_content = "Café münchën naïve résumé".encode("latin-1")
+        with patch(
+            "chardet.detect", return_value={"encoding": "unknown", "confidence": 0.3}
+        ):
+            encoding = parser.detect_encoding(latin1_content)
+            assert encoding == "latin-1"  # Should fall back and find latin-1 works
+
+    def test_encoding_detection_chardet_unavailable(self):
+        """Test encoding detection when chardet is not available."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test with chardet ImportError
+        utf8_content = "Test content: café".encode("utf-8")
         with patch("chardet.detect", side_effect=ImportError("chardet not available")):
             encoding = parser.detect_encoding(utf8_content)
-            assert encoding == "utf-8"  # Should fall back to utf-8
+            assert encoding == "utf-8"  # Should fall back and succeed with UTF-8
 
-        # Test detection error
+        # Test with content that requires specific encoding
+        cp1252_content = "Test with CP1252: smart 'quotes'".encode("cp1252")
+        with patch("chardet.detect", side_effect=ImportError("chardet not available")):
+            encoding = parser.detect_encoding(cp1252_content)
+            # Since UTF-8 comes first in fallback and can decode most content, expect UTF-8
+            assert encoding in ["utf-8", "cp1252"]  # Should find a working encoding
+
+    def test_encoding_detection_chardet_error(self):
+        """Test encoding detection when chardet throws an error."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        utf8_content = "Test content".encode("utf-8")
         with patch("chardet.detect", side_effect=Exception("Detection error")):
             encoding = parser.detect_encoding(utf8_content)
-            assert encoding == "utf-8"  # Should fall back to utf-8
+            assert encoding == "utf-8"  # Should fall back to UTF-8
+
+    def test_encoding_detection_edge_cases(self):
+        """Test encoding detection edge cases."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test empty content
+        encoding = parser.detect_encoding(b"")
+        assert encoding == "utf-8"
+
+        # Test pure ASCII content
+        ascii_content = "Hello World 123".encode("ascii")
+        encoding = parser.detect_encoding(ascii_content)
+        # Should detect successfully with any method
+        assert encoding in ["ascii", "utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+        # Test binary content that can't be decoded with any common encoding
+        binary_content = bytes(range(256))  # All possible byte values
+        with patch("chardet.detect", return_value={"encoding": None, "confidence": 0.0}):
+            encoding = parser.detect_encoding(binary_content)
+            # Latin-1 can decode any byte sequence, so it will be found in fallback
+            assert encoding in ["latin-1", "utf-8"]  # Should find fallback encoding
+
+    def test_encoding_detection_real_world_content(self):
+        """Test encoding detection with real-world-like content."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test multilingual UTF-8 content
+        multilingual_utf8 = "English, Français, Español, Deutsch, 日本語, العربية".encode("utf-8")
+        with patch("chardet.detect", return_value={"encoding": "utf-8", "confidence": 0.99}):
+            encoding = parser.detect_encoding(multilingual_utf8)
+            assert encoding == "utf-8"
+
+        # Test scientific content with special characters
+        scientific_content = "Temperature: 25°C, Pressure: 1013.25 hPa, pH: 7.4±0.1".encode("utf-8")
+        encoding = parser.detect_encoding(scientific_content)
+        # Should detect as some reasonable encoding
+        assert encoding in ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+    def test_encoding_detection_with_confidence_bom(self):
+        """Test encoding detection with confidence for BOM cases."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test UTF-8 BOM
+        utf8_bom_content = b"\xef\xbb\xbfHello, world!"
+        result = parser.detect_encoding_with_confidence(utf8_bom_content)
+        assert result["encoding"] == "utf-8-sig"
+        assert result["confidence"] == 1.0
+        assert result["method"] == "bom"
+        assert "UTF-8 BOM" in result["details"]
+
+        # Test UTF-16 LE BOM
+        utf16_le_bom_content = b"\xff\xfeH\x00e\x00l\x00l\x00o\x00"
+        result = parser.detect_encoding_with_confidence(utf16_le_bom_content)
+        assert result["encoding"] == "utf-16-le"
+        assert result["confidence"] == 1.0
+        assert result["method"] == "bom"
+
+    def test_encoding_detection_with_confidence_chardet(self):
+        """Test encoding detection with confidence using chardet."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        utf8_content = "Test content with UTF-8: café".encode("utf-8")
+        with patch(
+            "chardet.detect", return_value={"encoding": "UTF-8", "confidence": 0.95}
+        ):
+            result = parser.detect_encoding_with_confidence(utf8_content)
+            assert result["encoding"] == "utf-8"
+            assert result["confidence"] == 0.95
+            assert result["method"] == "chardet"
+            assert "0.95 confidence" in result["details"]
+
+    def test_encoding_detection_with_confidence_fallback(self):
+        """Test encoding detection with confidence fallback method."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test fallback with chardet unavailable
+        utf8_content = "Simple content".encode("utf-8")
+        with patch("chardet.detect", side_effect=ImportError("chardet not available")):
+            result = parser.detect_encoding_with_confidence(utf8_content)
+            assert result["encoding"] == "utf-8"
+            assert result["confidence"] == 0.8  # High confidence for successful decode
+            assert result["method"] == "fallback"
+            assert "Successfully decoded" in result["details"]
+
+    def test_encoding_detection_with_confidence_edge_cases(self):
+        """Test encoding detection with confidence edge cases."""
+        parser = ConcreteDocumentParser("test_parser")
+
+        # Test empty content
+        result = parser.detect_encoding_with_confidence(b"")
+        assert result["encoding"] == "utf-8"
+        assert result["confidence"] == 1.0
+        assert result["method"] == "default"
+        assert "Empty content" in result["details"]
+
+        # Test final fallback scenario
+        binary_content = bytes(range(256))
+        with patch("chardet.detect", return_value={"encoding": None, "confidence": 0.0}):
+            result = parser.detect_encoding_with_confidence(binary_content)
+            # Latin-1 can decode any byte sequence, so it will succeed in fallback
+            assert result["encoding"] in ["latin-1", "utf-8"] 
+            assert result["confidence"] == 0.8  # High confidence for successful decode
+            assert result["method"] == "fallback"
+            assert "Successfully decoded" in result["details"]
 
     def test_option_inheritance_from_base(self):
         """Test that options are properly inherited from base parser."""

@@ -109,8 +109,8 @@
 - [x] **AIM2-031-07** Create XML parser for PMC
 - [x] **AIM2-031-08** Implement section detection
 - [x] **AIM2-031-09** Add figure/table extraction
-- [ ] **AIM2-031-10** Create reference parser
-- [ ] **AIM2-031-11** Implement encoding detection
+- [x] **AIM2-031-10** Create reference parser
+- [x] **AIM2-031-11** Implement encoding detection
 - [ ] **AIM2-031-12** Add error handling
 - [ ] **AIM2-031-13** Run parser tests
 - [ ] **AIM2-035-01** Write unit tests for tokenization

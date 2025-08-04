@@ -1994,7 +1994,13 @@ class AbstractDocumentParser(AbstractParser):
 
     def detect_encoding(self, content: bytes) -> str:
         """
-        Detect text encoding of document content.
+        Detect text encoding of document content with comprehensive fallback strategies.
+
+        This method combines multiple approaches for robust encoding detection:
+        1. BOM (Byte Order Mark) detection for Unicode encodings
+        2. chardet library for statistical analysis
+        3. Common encoding fallback attempts
+        4. UTF-8 as final fallback
 
         Args:
             content (bytes): Raw document content
@@ -2002,33 +2008,171 @@ class AbstractDocumentParser(AbstractParser):
         Returns:
             str: Detected encoding name
         """
+        if not content:
+            return "utf-8"
+
+        # First, check for BOM (Byte Order Mark)
+        # Check UTF-32 BOMs first (longer patterns)
+        if content.startswith(b"\xff\xfe\x00\x00"):
+            self.logger.debug("Detected UTF-32 LE BOM")
+            return "utf-32-le"
+        elif content.startswith(b"\x00\x00\xfe\xff"):
+            self.logger.debug("Detected UTF-32 BE BOM")
+            return "utf-32-be"
+        # Then check UTF-16 and UTF-8 BOMs
+        elif content.startswith(b"\xef\xbb\xbf"):
+            self.logger.debug("Detected UTF-8 BOM")
+            return "utf-8-sig"
+        elif content.startswith(b"\xff\xfe"):
+            self.logger.debug("Detected UTF-16 LE BOM")
+            return "utf-16-le"
+        elif content.startswith(b"\xfe\xff"):
+            self.logger.debug("Detected UTF-16 BE BOM")
+            return "utf-16-be"
+
+        # Try chardet for detection
         try:
             import chardet
 
-            # Use chardet for detection
-            result = chardet.detect(content[:10000])  # Analyze first 10KB
+            # Use chardet for detection (analyze first 10KB for performance)
+            result = chardet.detect(content[:10000])
             encoding = result.get("encoding", "utf-8")
             confidence = result.get("confidence", 0.0)
 
             self.logger.debug(
-                f"Detected encoding: {encoding} (confidence: {confidence:.2f})"
+                f"chardet detected encoding: {encoding} (confidence: {confidence:.2f})"
             )
 
-            # Fall back to utf-8 if confidence is too low
-            if confidence < 0.7:
-                self.logger.warning(
-                    f"Low encoding confidence ({confidence:.2f}), using utf-8"
-                )
-                encoding = "utf-8"
+            # Use chardet result if confidence is high enough
+            if confidence >= 0.7 and encoding:
+                return encoding.lower()
 
-            return encoding
+            self.logger.info(
+                f"Low chardet confidence ({confidence:.2f}), trying fallback encodings"
+            )
 
         except ImportError:
-            self.logger.warning("chardet not available, using utf-8 encoding")
-            return "utf-8"
+            self.logger.info("chardet not available, using fallback encoding detection")
         except Exception as e:
-            self.logger.error(f"Error detecting encoding: {str(e)}")
-            return "utf-8"
+            self.logger.warning(f"chardet detection failed: {str(e)}, using fallback")
+
+        # Fallback: try common encodings
+        common_encodings = ["utf-8", "utf-16", "latin-1", "cp1252", "iso-8859-1", "ascii"]
+        
+        for encoding in common_encodings:
+            try:
+                content.decode(encoding)
+                self.logger.debug(f"Successfully decoded with {encoding}")
+                return encoding
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        # Final fallback to UTF-8 with error handling
+        self.logger.warning("All encoding detection methods failed, using utf-8 as fallback")
+        return "utf-8"
+
+    def detect_encoding_with_confidence(self, content: bytes) -> Dict[str, Any]:
+        """
+        Detect text encoding with confidence and method information.
+
+        Args:
+            content (bytes): Raw document content
+
+        Returns:
+            Dict[str, Any]: Dictionary containing:
+                - encoding (str): Detected encoding name
+                - confidence (float): Confidence score (0.0-1.0)
+                - method (str): Detection method used
+                - details (str): Additional details about detection
+        """
+        if not content:
+            return {
+                "encoding": "utf-8",
+                "confidence": 1.0,
+                "method": "default",
+                "details": "Empty content, defaulting to UTF-8"
+            }
+
+        # Check for BOM first (check longer patterns first)
+        if content.startswith(b"\xff\xfe\x00\x00"):
+            return {
+                "encoding": "utf-32-le",
+                "confidence": 1.0,
+                "method": "bom",
+                "details": "UTF-32 LE BOM detected"
+            }
+        elif content.startswith(b"\x00\x00\xfe\xff"):
+            return {
+                "encoding": "utf-32-be",
+                "confidence": 1.0,
+                "method": "bom",
+                "details": "UTF-32 BE BOM detected"
+            }
+        elif content.startswith(b"\xef\xbb\xbf"):
+            return {
+                "encoding": "utf-8-sig",
+                "confidence": 1.0,
+                "method": "bom",
+                "details": "UTF-8 BOM detected"
+            }
+        elif content.startswith(b"\xff\xfe"):
+            return {
+                "encoding": "utf-16-le",
+                "confidence": 1.0,  
+                "method": "bom",
+                "details": "UTF-16 LE BOM detected"
+            }
+        elif content.startswith(b"\xfe\xff"):
+            return {
+                "encoding": "utf-16-be",
+                "confidence": 1.0,
+                "method": "bom", 
+                "details": "UTF-16 BE BOM detected"
+            }
+
+        # Try chardet for detection
+        try:
+            import chardet
+
+            result = chardet.detect(content[:10000])
+            encoding = result.get("encoding", "utf-8")
+            confidence = result.get("confidence", 0.0)
+
+            if confidence >= 0.7 and encoding:
+                return {
+                    "encoding": encoding.lower(),
+                    "confidence": confidence,
+                    "method": "chardet",
+                    "details": f"chardet detection with {confidence:.2f} confidence"
+                }
+
+        except ImportError:
+            self.logger.debug("chardet not available for confidence reporting")
+        except Exception as e:
+            self.logger.debug(f"chardet detection failed: {str(e)}")
+
+        # Fallback: try common encodings
+        common_encodings = ["utf-8", "utf-16", "latin-1", "cp1252", "iso-8859-1", "ascii"]
+        
+        for encoding in common_encodings:
+            try:
+                content.decode(encoding)
+                return {
+                    "encoding": encoding,
+                    "confidence": 0.8,  # High confidence for successful decode
+                    "method": "fallback",
+                    "details": f"Successfully decoded with {encoding} in fallback test"
+                }
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        # Final fallback
+        return {
+            "encoding": "utf-8",
+            "confidence": 0.1,  # Low confidence fallback
+            "method": "fallback",
+            "details": "All detection methods failed, using UTF-8 as final fallback"
+        }
 
     def parse_sections_with_patterns(self, text: str) -> Dict[str, Dict[str, Any]]:
         """
