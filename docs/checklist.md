@@ -95,7 +95,7 @@
 - [x] **AIM2-013-06** Add multi-source support
 - [x] **AIM2-013-07** Create caching mechanism
 - [x] **AIM2-013-08** Implement statistics calculator
-- [ ] **AIM2-013-09** Add export functionality
+- [x] **AIM2-013-09** Add export functionality
 - [ ] **AIM2-013-10** Create merge operations
 - [ ] **AIM2-013-11** Implement subset extraction
 - [ ] **AIM2-013-12** Add validation checks
