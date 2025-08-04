@@ -85,8 +85,8 @@
 - [x] **AIM2-012-09** Create JSON-LD parser
 - [x] **AIM2-012-10** Implement error recovery logic
 - [x] **AIM2-012-11** Add progress reporting
-- [ ] **AIM2-012-12** Create format auto-detection
-- [ ] **AIM2-012-13** Run all parser unit tests
+- [x] **AIM2-012-12** Create format auto-detection
+- [x] **AIM2-012-13** Run all parser unit tests
 - [ ] **AIM2-013-01** Write unit tests for loading logic
 - [ ] **AIM2-013-02** Write unit tests for caching
 - [ ] **AIM2-013-03** Write unit tests for statistics
