@@ -29,6 +29,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import IO, Any, Callable, Dict, List, Optional, Set, Union
 
@@ -86,6 +87,35 @@ except ImportError:
         return func
 
 
+class ErrorSeverity(Enum):
+    """Classification of error severity levels for recovery decisions."""
+    WARNING = "warning"          # Minor issues that don't prevent processing
+    RECOVERABLE = "recoverable"  # Errors that can be handled with fallback strategies
+    FATAL = "fatal"             # Critical errors that prevent further processing
+
+
+class RecoveryStrategy(Enum):
+    """Available error recovery strategies."""
+    SKIP = "skip"               # Skip the problematic data/section
+    DEFAULT = "default"         # Use default/fallback values
+    RETRY = "retry"             # Retry with different parameters
+    REPLACE = "replace"         # Replace with corrected data
+    ABORT = "abort"             # Stop processing immediately
+    CONTINUE = "continue"       # Continue processing despite errors
+
+
+@dataclass
+class ErrorContext:
+    """Context information for error recovery decisions."""
+    error: Exception
+    severity: ErrorSeverity
+    location: str               # Where the error occurred (e.g., "line 45", "namespace declaration")
+    recovery_strategy: Optional[RecoveryStrategy] = None
+    attempted_recoveries: List[RecoveryStrategy] = field(default_factory=list)
+    recovery_data: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
 @dataclass
 class ParserStatistics:
     """Statistics tracking for parser operations."""
@@ -101,6 +131,16 @@ class ParserStatistics:
     validation_successes: int = 0
     warnings_generated: int = 0
     errors_encountered: List[str] = field(default_factory=list)
+    
+    # Error recovery statistics
+    total_errors: int = 0
+    recoverable_errors: int = 0
+    fatal_errors: int = 0
+    warnings: int = 0
+    successful_recoveries: int = 0
+    failed_recoveries: int = 0
+    recovery_strategies_used: Dict[str, int] = field(default_factory=dict)
+    error_types_encountered: Dict[str, int] = field(default_factory=dict)
 
     def update_parse_stats(self, success: bool, parse_time: float, content_size: int):
         """Update parsing statistics."""
@@ -117,6 +157,33 @@ class ParserStatistics:
         # Update average parse time
         if self.total_parses > 0:
             self.average_parse_time = self.total_parse_time / self.total_parses
+    
+    def update_error_stats(self, error_context: 'ErrorContext', recovery_successful: bool = False):
+        """Update error recovery statistics."""
+        self.total_errors += 1
+        
+        # Update severity counters
+        if error_context.severity == ErrorSeverity.WARNING:
+            self.warnings += 1
+        elif error_context.severity == ErrorSeverity.RECOVERABLE:
+            self.recoverable_errors += 1
+        elif error_context.severity == ErrorSeverity.FATAL:
+            self.fatal_errors += 1
+        
+        # Update recovery statistics
+        if recovery_successful:
+            self.successful_recoveries += 1
+        else:
+            self.failed_recoveries += 1
+        
+        # Track recovery strategy usage
+        if error_context.recovery_strategy:
+            strategy_name = error_context.recovery_strategy.value
+            self.recovery_strategies_used[strategy_name] = self.recovery_strategies_used.get(strategy_name, 0) + 1
+        
+        # Track error types
+        error_type = type(error_context.error).__name__
+        self.error_types_encountered[error_type] = self.error_types_encountered.get(error_type, 0) + 1
 
 
 @dataclass
@@ -588,6 +655,327 @@ class AbstractParser(ABC):
                 all_errors.append(f"Validation rule {rule_name} failed: {str(e)}")
 
         return all_errors
+
+    # =====================
+    # Error Recovery Methods
+    # =====================
+
+    def _classify_error_severity(self, error: Exception, context: str = "") -> ErrorSeverity:
+        """
+        Classify error severity based on error type and context.
+
+        Args:
+            error (Exception): The exception that occurred
+            context (str): Context information about where the error occurred
+
+        Returns:
+            ErrorSeverity: Classified severity level
+        """
+        error_type = type(error).__name__
+        error_message = str(error).lower()
+
+        # Fatal errors that prevent any processing
+        fatal_indicators = [
+            "outofmemoryerror", "stackoverflow", "system", "critical", 
+            "fatal", "corrupted", "cannot allocate"
+        ]
+        
+        # Recoverable errors that can be worked around
+        recoverable_indicators = [
+            "parsing", "format", "syntax", "invalid", "malformed", 
+            "missing", "namespace", "encoding", "timeout"
+        ]
+        
+        # Warning-level issues
+        warning_indicators = [
+            "deprecated", "recommendation", "optional", "preference",
+            "whitespace", "formatting"
+        ]
+
+        # Check error type patterns
+        if error_type in ["SystemError", "MemoryError", "KeyboardInterrupt"]:
+            return ErrorSeverity.FATAL
+        
+        if error_type in ["SyntaxError", "ValueError", "KeyError", "AttributeError"]:
+            return ErrorSeverity.RECOVERABLE
+            
+        if error_type in ["UserWarning", "DeprecationWarning"]:
+            return ErrorSeverity.WARNING
+
+        # Check error message content
+        for indicator in fatal_indicators:
+            if indicator in error_message:
+                return ErrorSeverity.FATAL
+                
+        for indicator in recoverable_indicators:
+            if indicator in error_message:
+                return ErrorSeverity.RECOVERABLE
+                
+        for indicator in warning_indicators:
+            if indicator in error_message:
+                return ErrorSeverity.WARNING
+
+        # Default to recoverable for unknown errors
+        return ErrorSeverity.RECOVERABLE
+
+    def _select_recovery_strategy(self, error_context: ErrorContext) -> RecoveryStrategy:
+        """
+        Select appropriate recovery strategy based on error context.
+
+        Args:
+            error_context (ErrorContext): Error context information
+
+        Returns:
+            RecoveryStrategy: Selected recovery strategy
+        """
+        error_type = type(error_context.error).__name__
+        severity = error_context.severity
+        attempted = error_context.attempted_recoveries
+
+        # Fatal errors should abort
+        if severity == ErrorSeverity.FATAL:
+            return RecoveryStrategy.ABORT
+
+        # For warnings, continue processing
+        if severity == ErrorSeverity.WARNING:
+            return RecoveryStrategy.CONTINUE
+
+        # Strategy selection for recoverable errors
+        if error_type in ["SyntaxError", "ValueError"]:
+            if RecoveryStrategy.SKIP not in attempted:
+                return RecoveryStrategy.SKIP
+            elif RecoveryStrategy.DEFAULT not in attempted:
+                return RecoveryStrategy.DEFAULT
+            else:
+                return RecoveryStrategy.ABORT
+
+        if error_type in ["KeyError", "AttributeError"]:
+            if RecoveryStrategy.DEFAULT not in attempted:
+                return RecoveryStrategy.DEFAULT
+            elif RecoveryStrategy.SKIP not in attempted:
+                return RecoveryStrategy.SKIP
+            else:
+                return RecoveryStrategy.ABORT
+
+        if error_type in ["TimeoutError", "ConnectionError"]:
+            if RecoveryStrategy.RETRY not in attempted and len(attempted) < 3:
+                return RecoveryStrategy.RETRY
+            else:
+                return RecoveryStrategy.ABORT
+
+        # Default strategy progression
+        if RecoveryStrategy.SKIP not in attempted:
+            return RecoveryStrategy.SKIP
+        elif RecoveryStrategy.DEFAULT not in attempted:
+            return RecoveryStrategy.DEFAULT
+        else:
+            return RecoveryStrategy.ABORT
+
+    def _apply_recovery_strategy(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Apply the selected recovery strategy.
+
+        Args:
+            error_context (ErrorContext): Error context with selected strategy
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Recovery result or None if recovery failed
+        """
+        strategy = error_context.recovery_strategy
+        
+        if not strategy:
+            self.logger.error("No recovery strategy selected")
+            return None
+
+        self.logger.info(f"Applying recovery strategy '{strategy.value}' for {type(error_context.error).__name__} at {error_context.location}")
+
+        try:
+            if strategy == RecoveryStrategy.SKIP:
+                return self._recover_skip(error_context, **kwargs)
+            elif strategy == RecoveryStrategy.DEFAULT:
+                return self._recover_default(error_context, **kwargs)
+            elif strategy == RecoveryStrategy.RETRY:
+                return self._recover_retry(error_context, **kwargs)
+            elif strategy == RecoveryStrategy.REPLACE:
+                return self._recover_replace(error_context, **kwargs)
+            elif strategy == RecoveryStrategy.CONTINUE:
+                return self._recover_continue(error_context, **kwargs)
+            elif strategy == RecoveryStrategy.ABORT:
+                raise error_context.error
+            else:
+                self.logger.error(f"Unknown recovery strategy: {strategy}")
+                return None
+                
+        except Exception as recovery_error:
+            self.logger.error(f"Recovery strategy '{strategy.value}' failed: {str(recovery_error)}")
+            return None
+
+    def _recover_skip(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Skip the problematic data/section and continue processing.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Empty/minimal result to continue processing
+        """
+        self.logger.warning(f"Skipping problematic section at {error_context.location}")
+        
+        # Return appropriate empty result based on context
+        if "return_type" in kwargs:
+            return_type = kwargs["return_type"]
+            if return_type == "list":
+                return []
+            elif return_type == "dict":
+                return {}
+            elif return_type == "string":
+                return ""
+        
+        return None
+
+    def _recover_default(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Use default/fallback values for the problematic data.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Default value for the expected data type
+        """
+        self.logger.warning(f"Using default values for problematic section at {error_context.location}")
+        
+        # Use provided default or generate appropriate one
+        if "default_value" in kwargs:
+            return kwargs["default_value"]
+        
+        # Generate context-appropriate defaults
+        if "namespace" in error_context.location.lower():
+            return {"namespace": "http://example.org/default#", "prefix": "default"}
+        elif "term" in error_context.location.lower():
+            return {"id": "unknown", "name": "Unknown Term", "definition": "Definition not available"}
+        elif "relationship" in error_context.location.lower():
+            return {"subject": "unknown", "predicate": "related_to", "object": "unknown"}
+        
+        return {}
+
+    def _recover_retry(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Retry the operation with different parameters.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Result of retry attempt or None if failed
+        """
+        retry_count = len([s for s in error_context.attempted_recoveries if s == RecoveryStrategy.RETRY])
+        max_retries = kwargs.get("max_retries", 3)
+        
+        if retry_count >= max_retries:
+            self.logger.error(f"Maximum retries ({max_retries}) exceeded for {error_context.location}")
+            return None
+        
+        self.logger.info(f"Retrying operation at {error_context.location} (attempt {retry_count + 1}/{max_retries})")
+        
+        # Apply retry-specific modifications
+        retry_kwargs = kwargs.copy()
+        retry_kwargs["retry_attempt"] = retry_count + 1
+        
+        # Implement retry logic - this would be overridden by specific parsers
+        return None
+
+    def _recover_replace(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Replace problematic data with corrected version.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Replacement data
+        """
+        self.logger.warning(f"Replacing problematic data at {error_context.location}")
+        
+        if "replacement_data" in kwargs:
+            return kwargs["replacement_data"]
+        
+        # Context-specific replacements
+        return self._recover_default(error_context, **kwargs)
+
+    def _recover_continue(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        Continue processing despite the error.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Partial result to continue with
+        """
+        self.logger.warning(f"Continuing processing despite error at {error_context.location}")
+        return kwargs.get("partial_result")
+
+    def _handle_parse_error(self, error: Exception, location: str = "", **kwargs) -> ErrorContext:
+        """
+        Comprehensive error handler that creates error context and applies recovery.
+
+        Args:
+            error (Exception): The exception that occurred
+            location (str): Location where error occurred
+            **kwargs: Additional context and recovery parameters
+
+        Returns:
+            ErrorContext: Complete error context with recovery information
+        """
+        # Create error context
+        severity = self._classify_error_severity(error, location)
+        error_context = ErrorContext(
+            error=error,
+            severity=severity,
+            location=location or "unknown location"
+        )
+
+        # Update statistics
+        self.statistics.update_error_stats(error_context, recovery_successful=False)
+
+        # Execute error hooks
+        self._execute_hooks("on_error", error_context)
+
+        # Check if error recovery is enabled
+        if not self.options.get("error_recovery", True):
+            self.logger.error(f"Error recovery disabled, re-raising {type(error).__name__}: {str(error)}")
+            raise error
+
+        # Select and apply recovery strategy
+        recovery_strategy = self._select_recovery_strategy(error_context)
+        error_context.recovery_strategy = recovery_strategy
+        error_context.attempted_recoveries.append(recovery_strategy)
+
+        # Log recovery attempt
+        self.logger.info(f"Handling {severity.value} error with {recovery_strategy.value} strategy: {str(error)}")
+
+        # Apply recovery
+        recovery_result = self._apply_recovery_strategy(error_context, **kwargs)
+        
+        # Update recovery success statistics
+        recovery_successful = recovery_result is not None
+        self.statistics.update_error_stats(error_context, recovery_successful=recovery_successful)
+
+        # Store recovery data
+        error_context.recovery_data = {
+            "recovery_result": recovery_result,
+            "recovery_successful": recovery_successful
+        }
+
+        return error_context
 
     def parse_file(self, file_path: Union[str, Path], **kwargs) -> ParseResult:
         """
@@ -1063,11 +1451,23 @@ class OWLParser(AbstractParser):
                 try:
                     rdf_graph = self._parse_with_rdflib(content, format_hint)
                 except Exception as e:
-                    if not self.options.get("error_recovery", True):
-                        raise OntologyException(f"RDFlib parsing failed: {str(e)}")
-                    self.logger.warning(
-                        f"RDFlib parsing failed, continuing with owlready2: {str(e)}"
+                    error_context = self._handle_parse_error(
+                        e, 
+                        location="rdflib parsing",
+                        return_type="rdflib_graph",
+                        fallback_parser="owlready2",
+                        content=content,
+                        format_hint=format_hint
                     )
+                    
+                    if error_context.recovery_data.get("recovery_successful"):
+                        rdf_graph = error_context.recovery_data.get("recovery_result")
+                    else:
+                        rdf_graph = None
+                    
+                    # If recovery failed and error is fatal, re-raise
+                    if error_context.severity == ErrorSeverity.FATAL:
+                        raise OntologyException(f"RDFlib parsing failed fatally: {str(e)}")
 
             # Parse using owlready2 for OWL-specific features
             owl_ontology = None
@@ -1077,9 +1477,24 @@ class OWLParser(AbstractParser):
                         content, format_hint, **kwargs
                     )
                 except Exception as e:
-                    if not self.options.get("error_recovery", True):
-                        raise OntologyException(f"owlready2 parsing failed: {str(e)}")
-                    self.logger.warning(f"owlready2 parsing failed: {str(e)}")
+                    error_context = self._handle_parse_error(
+                        e,
+                        location="owlready2 parsing", 
+                        return_type="owl_ontology",
+                        fallback_parser="rdflib",
+                        content=content,
+                        format_hint=format_hint,
+                        **kwargs
+                    )
+                    
+                    if error_context.recovery_data.get("recovery_successful"):
+                        owl_ontology = error_context.recovery_data.get("recovery_result")
+                    else:
+                        owl_ontology = None
+                    
+                    # If recovery failed and error is fatal, re-raise
+                    if error_context.severity == ErrorSeverity.FATAL:
+                        raise OntologyException(f"owlready2 parsing failed fatally: {str(e)}")
 
             # Return structured result
             result = {
@@ -2248,6 +2663,179 @@ class OWLParser(AbstractParser):
         )
         return filtered_triples
 
+    # =====================
+    # OWL-specific Error Recovery Methods
+    # =====================
+
+    def _recover_retry(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        OWL-specific retry recovery with alternative parsing strategies.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Result of retry attempt or None if failed
+        """
+        retry_count = len([s for s in error_context.attempted_recoveries if s == RecoveryStrategy.RETRY])
+        max_retries = kwargs.get("max_retries", 3)
+        
+        if retry_count >= max_retries:
+            self.logger.error(f"Maximum retries ({max_retries}) exceeded for {error_context.location}")
+            return None
+        
+        self.logger.info(f"Attempting OWL-specific retry at {error_context.location} (attempt {retry_count + 1}/{max_retries})")
+        
+        content = kwargs.get("content", "")
+        format_hint = kwargs.get("format_hint", "xml")
+        
+        try:
+            # Strategy 1: Try alternative format detection
+            if retry_count == 0:
+                self.logger.info("Retry strategy 1: Alternative format detection")
+                detected_format = self.detect_format(content)
+                if detected_format != format_hint:
+                    self.logger.info(f"Switching from {format_hint} to detected format {detected_format}")
+                    if "rdflib" in error_context.location:
+                        return self._parse_with_rdflib(content, detected_format)
+                    elif "owlready2" in error_context.location:
+                        return self._parse_with_owlready2(content, detected_format, **kwargs)
+            
+            # Strategy 2: Try cleaning malformed XML/RDF
+            elif retry_count == 1:
+                self.logger.info("Retry strategy 2: Content sanitization")
+                cleaned_content = self._sanitize_owl_content(content)
+                if cleaned_content != content:
+                    self.logger.info("Content was sanitized, retrying with cleaned version")
+                    if "rdflib" in error_context.location:
+                        return self._parse_with_rdflib(cleaned_content, format_hint)
+                    elif "owlready2" in error_context.location:
+                        return self._parse_with_owlready2(cleaned_content, format_hint, **kwargs)
+            
+            # Strategy 3: Try alternative parser
+            elif retry_count == 2:
+                self.logger.info("Retry strategy 3: Alternative parser")
+                fallback_parser = kwargs.get("fallback_parser")
+                if fallback_parser == "owlready2" and self._owlready2_available:
+                    self.logger.info("Trying owlready2 as fallback from rdflib")
+                    return self._parse_with_owlready2(content, format_hint, **kwargs)
+                elif fallback_parser == "rdflib" and self._rdflib_available:
+                    self.logger.info("Trying rdflib as fallback from owlready2")
+                    return self._parse_with_rdflib(content, format_hint)
+        
+        except Exception as retry_error:
+            self.logger.warning(f"Retry attempt {retry_count + 1} failed: {str(retry_error)}")
+            return None
+        
+        return None
+
+    def _sanitize_owl_content(self, content: str) -> str:
+        """
+        Sanitize OWL/RDF content to fix common parsing issues.
+
+        Args:
+            content (str): Original OWL/RDF content
+
+        Returns:
+            str: Sanitized content
+        """
+        import re
+        
+        sanitized = content
+        original_length = len(content)
+        
+        try:
+            # Fix 1: Remove invalid XML characters
+            sanitized = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', sanitized)
+            
+            # Fix 2: Fix malformed namespace declarations
+            # Find incomplete namespace declarations and add default values
+            namespace_pattern = r'xmlns:(\w+)=["\']\s*["\']\s*'
+            matches = re.findall(namespace_pattern, sanitized)
+            for prefix in matches:
+                default_ns = f"http://example.org/{prefix}#"
+                sanitized = re.sub(
+                    rf'xmlns:{prefix}=["\']\s*["\']\s*',
+                    f'xmlns:{prefix}="{default_ns}"',
+                    sanitized
+                )
+                self.logger.info(f"Fixed empty namespace declaration for prefix '{prefix}' with default: {default_ns}")
+            
+            # Fix 3: Fix missing xml declaration
+            if not sanitized.strip().startswith('<?xml'):
+                sanitized = '<?xml version="1.0" encoding="UTF-8"?>\n' + sanitized
+                self.logger.info("Added missing XML declaration")
+            
+            # Fix 4: Fix unclosed elements (basic approach)
+            # This is a simplified fix - would need more sophisticated parsing for complex cases
+            if '<rdf:RDF' in sanitized and not '</rdf:RDF>' in sanitized:
+                sanitized += '\n</rdf:RDF>'
+                self.logger.info("Added missing closing </rdf:RDF> tag")
+            
+            # Fix 5: Replace problematic characters in URIs
+            uri_pattern = r'rdf:resource=["\'](.*?)["\']\s*'
+            def fix_uri(match):
+                uri = match.group(1)
+                fixed_uri = uri.replace(' ', '%20').replace('\n', '').replace('\t', '')
+                if fixed_uri != uri:
+                    self.logger.info(f"Fixed problematic characters in URI: {uri} -> {fixed_uri}")
+                return f'rdf:resource="{fixed_uri}"'
+            
+            sanitized = re.sub(uri_pattern, fix_uri, sanitized)
+            
+            if len(sanitized) != original_length:
+                self.logger.info(f"Content sanitization changed length from {original_length} to {len(sanitized)} characters")
+        
+        except Exception as e:
+            self.logger.warning(f"Content sanitization failed: {str(e)}, returning original content")
+            return content
+        
+        return sanitized
+
+    def _recover_default(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        OWL-specific default recovery providing minimal valid OWL structures.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Default OWL structure
+        """
+        self.logger.warning(f"Providing OWL-specific defaults for {error_context.location}")
+        
+        return_type = kwargs.get("return_type")
+        
+        if return_type == "rdflib_graph" and self._rdflib_available:
+            # Create minimal RDF graph with basic namespace
+            graph = self._rdflib.Graph()
+            # Add default namespace and a basic triple
+            default_ns = self._rdflib.Namespace("http://example.org/default#")
+            graph.bind("default", default_ns)
+            graph.add((default_ns.DefaultOntology, self._rdflib.RDF.type, self._rdflib.OWL.Ontology))
+            self.logger.info("Created default RDF graph with minimal ontology structure")
+            return graph
+        
+        elif return_type == "owl_ontology" and self._owlready2_available:
+            # Create minimal owlready2 ontology
+            try:
+                with self._owlready2.World() as world:
+                    onto = world.get_ontology("http://example.org/default")
+                    with onto:
+                        # Create a basic class to make it a valid ontology
+                        class DefaultClass(self._owlready2.Thing):
+                            pass
+                    self.logger.info("Created default owlready2 ontology with minimal class structure")
+                    return onto
+            except Exception as e:
+                self.logger.error(f"Failed to create default owlready2 ontology: {str(e)}")
+                return None
+        
+        # Fallback to parent implementation
+        return super()._recover_default(error_context, **kwargs)
+
 
 class CSVParser(AbstractParser):
     """Concrete CSV parser implementation with comprehensive functionality.
@@ -2619,15 +3207,32 @@ class CSVParser(AbstractParser):
             if nrows and row_count >= nrows:
                 break
 
-            # Handle bad lines
-            if len(row) != len(headers) and not self.options.get(
-                "skip_bad_lines", False
-            ):
-                if not self.options.get("error_recovery", False):
-                    raise ValueError(
-                        f"Invalid CSV: inconsistent field count at row {row_count + 1}"
-                    )
+            # Handle bad lines with comprehensive error recovery
+            if len(row) != len(headers) and not self.options.get("skip_bad_lines", False):
+                field_count_error = ValueError(
+                    f"Invalid CSV: inconsistent field count at row {row_count + 1} - expected {len(headers)}, got {len(row)}"
+                )
+                
+                error_context = self._handle_parse_error(
+                    field_count_error,
+                    location=f"CSV row {row_count + 1}",
+                    return_type="list",
+                    row_data=row,
+                    expected_columns=len(headers),
+                    actual_columns=len(row),
+                    default_value=[""] * len(headers)
+                )
+                
+                if error_context.recovery_data.get("recovery_successful"):
+                    recovered_row = error_context.recovery_data.get("recovery_result")
+                    if recovered_row:
+                        row = recovered_row
+                    else:
+                        continue  # Skip this row
+                elif error_context.severity == ErrorSeverity.FATAL:
+                    raise field_count_error
                 else:
+                    # Continue with row padding/truncation as fallback
                     self._validation_errors.append(
                         f"Row {row_count + 1}: Field count mismatch - expected {len(headers)}, got {len(row)}"
                     )
@@ -3661,6 +4266,181 @@ class CSVParser(AbstractParser):
         self._column_types = {}
         self.logger.debug("Options reset to defaults")
 
+    # =====================
+    # CSV-specific Error Recovery Methods
+    # =====================
+
+    def _recover_default(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        CSV-specific default recovery for malformed rows and inconsistent data.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Recovered CSV data
+        """
+        location = error_context.location.lower()
+        
+        if "row" in location and "field count" in str(error_context.error):
+            # Handle field count mismatches
+            row_data = kwargs.get("row_data", [])
+            expected_columns = kwargs.get("expected_columns", 0)
+            actual_columns = kwargs.get("actual_columns", len(row_data))
+            
+            if actual_columns < expected_columns:
+                # Pad with empty strings
+                padded_row = row_data + [""] * (expected_columns - actual_columns)
+                self.logger.info(f"Padded row from {actual_columns} to {expected_columns} columns with empty strings")
+                return padded_row
+            elif actual_columns > expected_columns:
+                # Truncate to expected length
+                truncated_row = row_data[:expected_columns]
+                self.logger.info(f"Truncated row from {actual_columns} to {expected_columns} columns")
+                return truncated_row
+        
+        elif "encoding" in location:
+            # Handle encoding issues
+            self.logger.info("Using fallback encoding UTF-8 with error replacement")
+            return {"encoding": "utf-8", "errors": "replace"}
+        
+        elif "dialect" in location:
+            # Handle dialect detection failures
+            self.logger.info("Using default CSV dialect (comma-separated, quoted)")
+            return {"delimiter": ",", "quotechar": '"', "escapechar": None}
+        
+        # Fallback to parent implementation
+        return super()._recover_default(error_context, **kwargs)
+
+    def _recover_skip(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        CSV-specific skip recovery for problematic rows.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: None to indicate skipping
+        """
+        location = error_context.location.lower()
+        
+        if "row" in location:
+            self.logger.warning(f"Skipping problematic CSV row at {error_context.location}")
+            # Add to validation errors for tracking
+            self._validation_errors.append(f"Skipped row due to error: {str(error_context.error)}")
+            return None
+        
+        return super()._recover_skip(error_context, **kwargs)
+
+    def _recover_replace(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        CSV-specific replace recovery for fixing malformed data.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Replaced/fixed CSV data
+        """
+        location = error_context.location.lower()
+        error_message = str(error_context.error).lower()
+        
+        if "row" in location and "field count" in error_message:
+            # Handle field count mismatches with intelligent padding/truncation
+            row_data = kwargs.get("row_data", [])
+            expected_columns = kwargs.get("expected_columns", 0)
+            
+            if len(row_data) < expected_columns:
+                # Try to determine appropriate default values based on column types
+                replacement_row = []
+                for i, value in enumerate(row_data):
+                    replacement_row.append(value)
+                
+                # Fill missing columns with type-appropriate defaults
+                for i in range(len(row_data), expected_columns):
+                    column_type = self._column_types.get(i, str)
+                    if column_type in [int, float]:
+                        replacement_row.append("0")
+                    elif column_type == bool:
+                        replacement_row.append("false")
+                    else:
+                        replacement_row.append("")
+                
+                self.logger.info(f"Replaced missing columns with type-appropriate defaults")
+                return replacement_row
+            
+            elif len(row_data) > expected_columns:
+                # Intelligently merge excess columns into the last column
+                merged_row = row_data[:expected_columns-1]
+                merged_last_column = " ".join(str(x) for x in row_data[expected_columns-1:])
+                merged_row.append(merged_last_column)
+                
+                self.logger.info(f"Merged {len(row_data) - expected_columns + 1} excess columns into last column")
+                return merged_row
+        
+        elif "encoding" in error_message:
+            # Handle encoding replacement
+            content = kwargs.get("content", "")
+            try:
+                # Try common encodings
+                for encoding in ["utf-8", "latin1", "cp1252", "iso-8859-1"]:
+                    try:
+                        decoded = content.encode("utf-8", errors="ignore").decode(encoding)
+                        self.logger.info(f"Successfully replaced encoding with {encoding}")
+                        return {"content": decoded, "encoding": encoding}
+                    except (UnicodeDecodeError, UnicodeEncodeError):
+                        continue
+            except Exception:
+                pass
+            
+            # Final fallback
+            safe_content = content.encode("utf-8", errors="ignore").decode("utf-8")
+            self.logger.info("Used UTF-8 with ignored errors as final encoding fallback")
+            return {"content": safe_content, "encoding": "utf-8"}
+        
+        return super()._recover_replace(error_context, **kwargs)
+
+    def _sanitize_csv_row(self, row: list, expected_columns: int) -> list:
+        """
+        Sanitize a CSV row to fix common issues.
+
+        Args:
+            row (list): Raw CSV row data
+            expected_columns (int): Expected number of columns
+
+        Returns:
+            list: Sanitized row data
+        """
+        sanitized_row = []
+        
+        for i, cell in enumerate(row):
+            if cell is None:
+                sanitized_cell = ""
+            else:
+                # Convert to string and clean
+                sanitized_cell = str(cell).strip()
+                
+                # Remove control characters
+                sanitized_cell = ''.join(char for char in sanitized_cell if ord(char) >= 32 or char in '\t\n\r')
+                
+                # Handle embedded newlines in CSV cells
+                if '\n' in sanitized_cell or '\r' in sanitized_cell:
+                    sanitized_cell = sanitized_cell.replace('\n', ' ').replace('\r', ' ')
+                    self.logger.debug(f"Removed embedded newlines from cell in column {i}")
+            
+            sanitized_row.append(sanitized_cell)
+        
+        # Ensure correct column count
+        if len(sanitized_row) < expected_columns:
+            sanitized_row.extend([""] * (expected_columns - len(sanitized_row)))
+        elif len(sanitized_row) > expected_columns:
+            sanitized_row = sanitized_row[:expected_columns]
+        
+        return sanitized_row
+
 
 class JSONLDParser(AbstractParser):
     """Comprehensive JSON-LD parser implementation for the AIM2 ontology project.
@@ -3907,19 +4687,29 @@ class JSONLDParser(AbstractParser):
                     )
 
             # Parse JSON first with security protections
+            data = None
             try:
                 # Use secure JSON parsing with depth limits
                 data = self._secure_json_parse(content)
-            except self._json.JSONDecodeError as e:
-                raise OntologyException(f"Invalid JSON content: {str(e)}")
-            except RecursionError:
-                raise OntologyException(
-                    "JSON structure too deeply nested - potential JSON bomb attack"
+            except (self._json.JSONDecodeError, RecursionError, MemoryError) as e:
+                error_context = self._handle_parse_error(
+                    e,
+                    location="JSON parsing",
+                    return_type="dict",
+                    content=content,
+                    parsing_stage="json_decode"
                 )
-            except MemoryError:
-                raise OntologyException(
-                    "JSON content too large - potential JSON bomb attack"
-                )
+                
+                if error_context.recovery_data.get("recovery_successful"):
+                    data = error_context.recovery_data.get("recovery_result")
+                else:
+                    # If recovery fails for JSON parsing, it's usually fatal
+                    if isinstance(e, self._json.JSONDecodeError):
+                        raise OntologyException(f"Invalid JSON content: {str(e)}")
+                    elif isinstance(e, RecursionError):
+                        raise OntologyException("JSON structure too deeply nested - potential JSON bomb attack")
+                    elif isinstance(e, MemoryError):
+                        raise OntologyException("JSON content too large - potential JSON bomb attack")
 
             # Process JSON-LD data
             processed_data = data
@@ -3930,12 +4720,22 @@ class JSONLDParser(AbstractParser):
                     # Expand the document to normalize it
                     processed_data = self.expand(data, **kwargs)
                 except Exception as e:
-                    if not self.options.get("error_recovery", True):
-                        raise OntologyException(f"JSON-LD processing failed: {str(e)}")
-                    self.logger.warning(
-                        f"JSON-LD processing failed, using raw data: {str(e)}"
+                    error_context = self._handle_parse_error(
+                        e,
+                        location="JSON-LD expansion",
+                        return_type="dict",
+                        content=content,
+                        data=data,
+                        parsing_stage="jsonld_expand",
+                        **kwargs
                     )
-                    processed_data = data
+                    
+                    if error_context.recovery_data.get("recovery_successful"):
+                        processed_data = error_context.recovery_data.get("recovery_result")
+                    else:
+                        # Use raw data as fallback
+                        self.logger.warning(f"JSON-LD processing failed, using raw data: {str(e)}")
+                        processed_data = data
 
             # Convert to ontology format if requested
             if kwargs.get("convert_to_ontology", True):
@@ -3958,11 +4758,24 @@ class JSONLDParser(AbstractParser):
                             "Ontology conversion returned None, falling back to raw data"
                         )
                 except Exception as e:
-                    if not self.options.get("error_recovery", True):
-                        raise OntologyException(f"Ontology conversion failed: {str(e)}")
-                    self.logger.warning(
-                        f"Ontology conversion failed, returning processed data: {str(e)}"
+                    error_context = self._handle_parse_error(
+                        e,
+                        location="ontology conversion",
+                        return_type="dict", 
+                        content=content,
+                        processed_data=processed_data,
+                        parsing_stage="ontology_convert",
+                        **kwargs
                     )
+                    
+                    if error_context.recovery_data.get("recovery_successful"):
+                        ontology_data = error_context.recovery_data.get("recovery_result")
+                        if ontology_data:
+                            return ontology_data
+                    elif error_context.severity == ErrorSeverity.FATAL:
+                        raise OntologyException(f"Ontology conversion failed: {str(e)}")
+                    else:
+                        self.logger.warning(f"Ontology conversion failed, returning processed data: {str(e)}")
 
             # Return processed JSON-LD data
             self.statistics.successful_parses += 1
@@ -5252,3 +6065,310 @@ class JSONLDParser(AbstractParser):
                 metadata[key] = value
 
         return metadata
+
+    # =====================
+    # JSON-LD-specific Error Recovery Methods
+    # =====================
+
+    def _recover_retry(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        JSON-LD-specific retry recovery with alternative parsing strategies.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Result of retry attempt or None if failed
+        """
+        retry_count = len([s for s in error_context.attempted_recoveries if s == RecoveryStrategy.RETRY])
+        max_retries = kwargs.get("max_retries", 3)
+        
+        if retry_count >= max_retries:
+            self.logger.error(f"Maximum retries ({max_retries}) exceeded for {error_context.location}")
+            return None
+        
+        self.logger.info(f"Attempting JSON-LD-specific retry at {error_context.location} (attempt {retry_count + 1}/{max_retries})")
+        
+        content = kwargs.get("content", "")
+        parsing_stage = kwargs.get("parsing_stage", "")
+        
+        try:
+            if parsing_stage == "json_decode":
+                # Strategy for JSON parsing errors
+                if retry_count == 0:
+                    # Try fixing common JSON issues
+                    self.logger.info("Retry strategy 1: JSON sanitization")
+                    sanitized_content = self._sanitize_json_content(content)
+                    if sanitized_content != content:
+                        return self._secure_json_parse(sanitized_content)
+                
+                elif retry_count == 1:
+                    # Try alternative JSON parsing with more lenient settings
+                    self.logger.info("Retry strategy 2: Lenient JSON parsing")
+                    import ast
+                    try:
+                        # Use ast.literal_eval for safer parsing of simple structures
+                        return ast.literal_eval(content)
+                    except (ValueError, SyntaxError):
+                        pass
+                
+                elif retry_count == 2:
+                    # Try extracting valid JSON from larger text
+                    self.logger.info("Retry strategy 3: JSON extraction")
+                    extracted_json = self._extract_json_from_text(content)
+                    if extracted_json:
+                        return self._secure_json_parse(extracted_json)
+            
+            elif parsing_stage == "jsonld_expand":
+                # Strategy for JSON-LD expansion errors
+                data = kwargs.get("data", {})
+                
+                if retry_count == 0:
+                    # Try adding missing context
+                    self.logger.info("Retry strategy 1: Add default context")
+                    data_with_context = self._add_default_context(data)
+                    return self.expand(data_with_context, **kwargs)
+                
+                elif retry_count == 1:
+                    # Try without expansion (use raw data)
+                    self.logger.info("Retry strategy 2: Skip expansion")
+                    return data
+            
+            elif parsing_stage == "ontology_convert":
+                # Strategy for ontology conversion errors
+                processed_data = kwargs.get("processed_data", {})
+                
+                if retry_count == 0:
+                    # Try simpler conversion
+                    self.logger.info("Retry strategy 1: Simple ontology structure")
+                    return self._simple_ontology_conversion(processed_data)
+                
+                elif retry_count == 1:
+                    # Return minimal ontology structure
+                    self.logger.info("Retry strategy 2: Minimal ontology")
+                    return self._create_minimal_ontology(processed_data)
+        
+        except Exception as retry_error:
+            self.logger.warning(f"Retry attempt {retry_count + 1} failed: {str(retry_error)}")
+        
+        return None
+
+    def _sanitize_json_content(self, content: str) -> str:
+        """
+        Sanitize JSON content to fix common parsing issues.
+
+        Args:
+            content (str): Original JSON content
+
+        Returns:
+            str: Sanitized JSON content
+        """
+        import re
+        
+        sanitized = content.strip()
+        original_length = len(content)
+        
+        try:
+            # Fix 1: Remove BOM and invisible characters
+            sanitized = sanitized.lstrip('\ufeff\ufffe')
+            
+            # Fix 2: Fix trailing commas
+            sanitized = re.sub(r',(\s*[}\]])', r'\1', sanitized)
+            
+            # Fix 3: Quote unquoted keys
+            sanitized = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', sanitized)
+            
+            # Fix 4: Fix single quotes to double quotes
+            sanitized = re.sub(r"'([^']*)'", r'"\1"', sanitized)
+            
+            # Fix 5: Remove control characters
+            sanitized = re.sub(r'[\x00-\x1f\x7f]', '', sanitized)
+            
+            # Fix 6: Fix escaped quotes
+            sanitized = sanitized.replace("\\'", "'").replace('\\"', '"')
+            
+            if len(sanitized) != original_length:
+                self.logger.info(f"JSON sanitization changed length from {original_length} to {len(sanitized)} characters")
+        
+        except Exception as e:
+            self.logger.warning(f"JSON sanitization failed: {str(e)}, returning original content")
+            return content
+        
+        return sanitized
+
+    def _extract_json_from_text(self, content: str) -> Optional[str]:
+        """
+        Extract valid JSON from mixed text content.
+
+        Args:
+            content (str): Content that may contain JSON
+
+        Returns:
+            Optional[str]: Extracted JSON string or None
+        """
+        import re
+        
+        # Look for JSON patterns
+        json_patterns = [
+            r'\{[^{}]*\}',  # Simple object
+            r'\[[^\[\]]*\]',  # Simple array
+            r'\{.*\}',  # Complex object (greedy)
+            r'\[.*\]',  # Complex array (greedy)
+        ]
+        
+        for pattern in json_patterns:
+            matches = re.findall(pattern, content, re.DOTALL)
+            for match in matches:
+                try:
+                    # Test if it's valid JSON
+                    self._json.loads(match)
+                    self.logger.info(f"Extracted valid JSON pattern: {pattern}")
+                    return match
+                except self._json.JSONDecodeError:
+                    continue
+        
+        return None
+
+    def _add_default_context(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Add default JSON-LD context to data that's missing it.
+
+        Args:
+            data (Dict[str, Any]): JSON-LD data
+
+        Returns:
+            Dict[str, Any]: Data with default context
+        """
+        if not isinstance(data, dict):
+            return data
+        
+        if "@context" not in data:
+            default_context = {
+                "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+                "rdfs": "http://www.w3.org/2000/01/rdf-schema#", 
+                "owl": "http://www.w3.org/2002/07/owl#",
+                "xsd": "http://www.w3.org/2001/XMLSchema#"
+            }
+            
+            data_with_context = {"@context": default_context}
+            data_with_context.update(data)
+            
+            self.logger.info("Added default JSON-LD context")
+            return data_with_context
+        
+        return data
+
+    def _simple_ontology_conversion(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Simple ontology conversion that extracts basic structure.
+
+        Args:
+            data (Dict[str, Any]): JSON-LD data
+
+        Returns:
+            Dict[str, Any]: Simple ontology structure
+        """
+        try:
+            # Create a simplified ontology structure
+            ontology = {
+                "id": "recovered_ontology",
+                "name": "Recovered Ontology",
+                "terms": {},
+                "relationships": {},
+                "metadata": {
+                    "recovered": True,
+                    "source": "json-ld"
+                }
+            }
+            
+            # Extract basic terms from the data
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if key.startswith("@"):
+                        continue
+                    
+                    term_id = str(key)
+                    ontology["terms"][term_id] = {
+                        "id": term_id,
+                        "name": term_id.replace("_", " ").title(),
+                        "definition": str(value) if not isinstance(value, (dict, list)) else "Complex structure"
+                    }
+            
+            elif isinstance(data, list):
+                for i, item in enumerate(data):
+                    if isinstance(item, dict):
+                        item_id = item.get("@id", f"item_{i}")
+                        ontology["terms"][item_id] = {
+                            "id": item_id,
+                            "name": item.get("name", item.get("rdfs:label", item_id)),
+                            "definition": item.get("definition", item.get("rdfs:comment", ""))
+                        }
+            
+            self.logger.info("Created simple ontology conversion")
+            return ontology
+        
+        except Exception as e:
+            self.logger.error(f"Simple ontology conversion failed: {str(e)}")
+            return None
+
+    def _create_minimal_ontology(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create minimal valid ontology structure.
+
+        Args:
+            data (Dict[str, Any]): Original data
+
+        Returns:
+            Dict[str, Any]: Minimal ontology
+        """
+        return {
+            "id": "minimal_ontology",
+            "name": "Minimal Recovered Ontology",
+            "terms": {
+                "default_term": {
+                    "id": "default_term",
+                    "name": "Default Term",
+                    "definition": "Minimal term created during error recovery"
+                }
+            },
+            "relationships": {},
+            "metadata": {
+                "recovered": True,
+                "minimal": True,
+                "source": "error_recovery",
+                "original_data_type": type(data).__name__
+            }
+        }
+
+    def _recover_default(self, error_context: ErrorContext, **kwargs) -> Any:
+        """
+        JSON-LD-specific default recovery providing minimal valid structures.
+
+        Args:
+            error_context (ErrorContext): Error context information
+            **kwargs: Additional recovery parameters
+
+        Returns:
+            Any: Default JSON-LD structure
+        """
+        parsing_stage = kwargs.get("parsing_stage", "")
+        
+        if parsing_stage == "json_decode":
+            # Return minimal valid JSON
+            self.logger.info("Providing default empty JSON object")
+            return {}
+        
+        elif parsing_stage == "jsonld_expand":
+            # Return the original data without expansion
+            data = kwargs.get("data", {})
+            self.logger.info("Using original data without JSON-LD expansion")
+            return data
+        
+        elif parsing_stage == "ontology_convert":
+            # Return minimal ontology
+            self.logger.info("Providing minimal ontology structure")
+            return self._create_minimal_ontology(kwargs.get("processed_data", {}))
+        
+        # Fallback to parent implementation
+        return super()._recover_default(error_context, **kwargs)
